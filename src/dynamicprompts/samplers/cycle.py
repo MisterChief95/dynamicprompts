@@ -85,7 +85,12 @@ class CyclicalSampler(Sampler):
 
             combination_samplers = (
                 (
-                    SamplingResult.joined(sample, separator=command.separator)
+                    SamplingResult.joined_with_affixes(
+                        sample,
+                        separator=command.separator,
+                        prefix=command.prefix,
+                        suffix=command.suffix,
+                    )
                     for sample in _get_combination_samples(combo, sampling_context)
                 )
                 for combo in combinations

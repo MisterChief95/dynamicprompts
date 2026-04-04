@@ -23,6 +23,8 @@ class VariantCommand(Command):
     min_bound: int = 1
     max_bound: int = 1
     separator: str = ","
+    prefix: str = ""
+    suffix: str = ""
     sampling_method: SamplingMethod | None = None
 
     def __post_init__(self):
@@ -61,6 +63,8 @@ class VariantCommand(Command):
         min_bound: int = 1,
         max_bound: int = 1,
         separator: str = ",",
+        prefix: str = "",
+        suffix: str = "",
         sampling_method: SamplingMethod | None = None,
     ) -> VariantCommand:
         vals = [LiteralCommand(str(v)) for v in literals]
@@ -72,6 +76,8 @@ class VariantCommand(Command):
             min_bound=min_bound,
             max_bound=max_bound,
             separator=separator,
+            prefix=prefix,
+            suffix=suffix,
             sampling_method=sampling_method,
         )
 

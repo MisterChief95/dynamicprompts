@@ -4,12 +4,15 @@ import logging
 
 from dynamicprompts.commands import (
     Command,
+    IfCommand,
     LiteralCommand,
     SequenceCommand,
+    SwitchCommand,
     VariantCommand,
     WildcardCommand,
     WrapCommand,
 )
+from dynamicprompts.commands.conditional_commands import Condition
 from dynamicprompts.commands.variable_commands import (
     VariableAccessCommand,
     VariableAssignmentCommand,
@@ -46,6 +49,10 @@ class Sampler:
             return self._get_variable(command, context)
         if isinstance(command, WrapCommand):
             return self._get_wrap(command, context)
+        if isinstance(command, IfCommand):
+            return self._get_if(command, context)
+        if isinstance(command, SwitchCommand):
+            return self._get_switch(command, context)
         return self._unsupported_command(command)
 
     def _unsupported_command(self, command: Command) -> ResultGen:
@@ -110,3 +117,99 @@ class Sampler:
         context: SamplingContext,
     ) -> ResultGen:
         return self._unsupported_command(command)
+
+    @staticmethod
+    def _evaluate_condition(
+        condition: Condition,
+        context: SamplingContext,
+    ) -> bool:
+        """Evaluate a Condition by sampling its operands to string values."""
+        _NUMERIC_OPS = (">", "<", ">=", "<=")
+
+        left_text = next(context.generator_from_command(condition.left)).text.strip()
+
+        if condition.operator in ("empty", "!empty"):
+            is_empty = left_text == ""
+            return is_empty if condition.operator == "empty" else not is_empty
+
+        assert condition.right is not None, "Binary operators require a right operand"
+        right_text = next(context.generator_from_command(condition.right)).text.strip()
+
+        if condition.operator in _NUMERIC_OPS:
+            try:
+                left_val = float(left_text)
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Cannot compare non-numeric value {left_text!r} with operator {condition.operator!r}",
+                ) from None
+            try:
+                right_val = float(right_text)
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Cannot compare non-numeric value {right_text!r} with operator {condition.operator!r}",
+                ) from None
+            if condition.operator == ">":
+                return left_val > right_val
+            elif condition.operator == "<":
+                return left_val < right_val
+            elif condition.operator == ">=":
+                return left_val >= right_val
+            else:  # <=
+                return left_val <= right_val
+
+        # String comparison
+        if condition.operator == "==":
+            return left_text == right_text
+        elif condition.operator == "!=":
+            return left_text != right_text
+        else:
+            raise ValueError(f"Unknown operator: {condition.operator!r}")
+
+    def _get_if(
+        self,
+        command: IfCommand,
+        context: SamplingContext,
+    ) -> ResultGen:
+        while True:
+            result = self._evaluate_condition(command.condition, context)
+            if result:
+                yield next(context.generator_from_command(command.if_value))
+            elif command.else_value is not None:
+                yield next(context.generator_from_command(command.else_value))
+            else:
+                yield SamplingResult(text="")
+
+    def _get_switch(
+        self,
+        command: SwitchCommand,
+        context: SamplingContext,
+    ) -> ResultGen:
+        while True:
+            expr_text = next(context.generator_from_command(command.expr)).text.strip()
+
+            # Find the matching case
+            match_idx = None
+            default_idx = None
+            for i, case in enumerate(command.cases):
+                if case.label == "_":
+                    default_idx = i
+                elif case.label.strip() == expr_text:
+                    match_idx = i
+                    break
+
+            start_idx = match_idx if match_idx is not None else default_idx
+
+            if start_idx is None:
+                yield SamplingResult(text="")
+                continue
+
+            # Collect values: from match point, continue through fall-throughs
+            results = []
+            for i in range(start_idx, len(command.cases)):
+                case = command.cases[i]
+                val = next(context.generator_from_command(case.value))
+                results.append(val)
+                if not case.fall_through:
+                    break
+
+            yield SamplingResult.joined(results, separator=", ")
