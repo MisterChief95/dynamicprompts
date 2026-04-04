@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 from dynamicprompts.commands import (
@@ -42,9 +43,7 @@ class Sampler:
         if isinstance(command, WildcardCommand):
             return self._get_wildcard(command, context)
         if isinstance(command, VariableAssignmentCommand):
-            raise NotImplementedError(
-                "VariableAssignmentCommand should never be sampled",
-            )
+            return self._get_variable_assignment(command, context)
         if isinstance(command, VariableAccessCommand):
             return self._get_variable(command, context)
         if isinstance(command, WrapCommand):
@@ -79,11 +78,58 @@ class Sampler:
         command: SequenceCommand,
         context: SamplingContext,
     ) -> ResultGen:
+        # Pre-process top-level assignment tokens: strip them from the token
+        # list and bake their values into context once (before the loop).
+        # This preserves "immediate" assignment semantics where the variable is
+        # sampled exactly once and reused across all generated results.
+        pre_vars = context.variables
         tokens, context = context.process_variable_assignments(command.tokens)
+        # Variables newly introduced by the stripped assignments — bubble these
+        # up through results so outer sequences (e.g. a variant's parent) see them.
+        new_vars: tuple[tuple[str, object], ...] = tuple(
+            (name, val)
+            for name, val in context.variables.items()
+            if name not in pre_vars
+        )
+
+        # Create generators once so stateful samplers (e.g. cyclical) maintain
+        # their position across successive calls.
         sub_generators = [context.generator_from_command(c) for c in tokens]
 
         while True:
-            yield rotate_and_join(sub_generators, separator=command.separator)
+            results: list[SamplingResult] = []
+            current_context = context
+            extra_vars: dict[str, object] = {}
+            for i, gen in enumerate(sub_generators):
+                if extra_vars:
+                    # Variables from an earlier token in this cycle need to be
+                    # visible when sampling this token.  Create a one-shot
+                    # generator with the updated context rather than advancing
+                    # the persistent generator (which has the old context).
+                    result = next(
+                        current_context.generator_from_command(tokens[i])
+                    )
+                else:
+                    result = next(gen)
+                # Collect variables from branch assignments that bubbled up.
+                if result.variables:
+                    extra_vars.update(dict(result.variables))
+                    current_context = current_context.with_variables(
+                        dict(result.variables),
+                    )
+                results.append(result)
+            joined = SamplingResult.joined_with_affixes(
+                results,
+                separator=command.separator,
+                prefix="",
+                suffix="",
+            )
+            all_new: dict[str, object] = dict(new_vars)
+            all_new.update(extra_vars)
+            if all_new:
+                yield dataclasses.replace(joined, variables=tuple(all_new.items()))
+            else:
+                yield joined
 
     def _get_literal(
         self,
@@ -92,6 +138,20 @@ class Sampler:
     ) -> ResultGen:
         while True:
             yield SamplingResult(text=command.literal)
+
+    def _get_variable_assignment(
+        self,
+        command: VariableAssignmentCommand,
+        context: SamplingContext,
+    ) -> ResultGen:
+        """
+        Yield a single empty-text result carrying the variable assignment.
+        The surrounding sequence sampler applies the variable to the context
+        for subsequent tokens, and the result bubbles up through joined results
+        so outer sequences can also see it (e.g. assignments inside a variant branch).
+        """
+        resolved = context.process_variable_assignment(command)
+        yield SamplingResult(text="", variables=((command.name, resolved),))
 
     def _get_variable(
         self,
@@ -171,8 +231,8 @@ class Sampler:
         context: SamplingContext,
     ) -> ResultGen:
         while True:
-            result = self._evaluate_condition(command.condition, context)
-            if result:
+            condition_result = self._evaluate_condition(command.condition, context)
+            if condition_result:
                 yield next(context.generator_from_command(command.if_value))
             elif command.else_value is not None:
                 yield next(context.generator_from_command(command.else_value))
@@ -203,11 +263,18 @@ class Sampler:
                 yield SamplingResult(text="")
                 continue
 
-            # Collect values: from match point, continue through fall-throughs
+            # Collect values: from match point, continue through fall-throughs.
+            # Thread context through cases so variables assigned in earlier
+            # fall-through cases are visible to later ones.
             results = []
+            current_context = context
             for i in range(start_idx, len(command.cases)):
                 case = command.cases[i]
-                val = next(context.generator_from_command(case.value))
+                val = next(current_context.generator_from_command(case.value))
+                if val.variables:
+                    current_context = current_context.with_variables(
+                        dict(val.variables),
+                    )
                 results.append(val)
                 if not case.fall_through:
                     break

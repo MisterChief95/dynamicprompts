@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import Iterable, cast
 
@@ -55,7 +56,13 @@ class CombinatorialSampler(Sampler):
         command: SequenceCommand,
         context: SamplingContext,
     ) -> ResultGen:
+        pre_vars = context.variables
         tokens, context = context.process_variable_assignments(command.tokens)
+        new_vars: tuple[tuple[str, object], ...] = tuple(
+            (name, val)
+            for name, val in context.variables.items()
+            if name not in pre_vars
+        )
         non_combo_commands = [
             c for c in tokens if c.sampling_method != SamplingMethod.COMBINATORIAL
         ]
@@ -75,26 +82,37 @@ class CombinatorialSampler(Sampler):
             ),  # sentinel 2
         ]
 
-        def get_sequence(commands: list[Command]) -> Iterable[list[SamplingResult]]:
+        def get_sequence(
+            commands: list[Command],
+            ctx: SamplingContext,
+        ) -> Iterable[list[SamplingResult]]:
             if len(commands) == 0:
                 yield []
             else:
                 first_command, rest = commands[0], commands[1:]
-                if context.get_effective_sampling_method(first_command).is_nonfinite():
-                    for rest_vals in get_sequence(rest):
+                if ctx.get_effective_sampling_method(first_command).is_nonfinite():
+                    for rest_vals in get_sequence(rest, ctx):
                         val = command_collection.get_value(first_command)
                         if val:
                             yield [val] + rest_vals
                         else:
                             yield rest_vals
                 else:
-                    gen = context.generator_from_command(first_command)
+                    gen = ctx.generator_from_command(first_command)
                     for first_val in gen:
-                        for rest_vals in get_sequence(rest):
+                        # Apply variables produced by this token before processing the rest.
+                        next_ctx = ctx.with_variables(dict(first_val.variables)) if first_val.variables else ctx
+                        for rest_vals in get_sequence(rest, next_ctx):
                             yield [first_val] + rest_vals
 
-        for result_arr in get_sequence(augmented_tokens):
-            yield SamplingResult.joined(result_arr, separator=command.separator)
+        for result_arr in get_sequence(augmented_tokens, context):
+            joined = SamplingResult.joined(result_arr, separator=command.separator)
+            if new_vars or joined.variables:
+                merged: dict[str, object] = dict(new_vars)
+                merged.update(dict(joined.variables))
+                yield dataclasses.replace(joined, variables=tuple(merged.items()))
+            else:
+                yield joined
 
     def _get_variant(
         self,
@@ -104,7 +122,7 @@ class CombinatorialSampler(Sampler):
         if len(variant_command.variants) == 0:
             return
 
-        seen = set()
+        seen: set[tuple] = set()
         is_wildcard_variant = len(variant_command.values) == 1 and isinstance(
             variant_command.values[0],
             WildcardCommand,
@@ -130,8 +148,9 @@ class CombinatorialSampler(Sampler):
                     for prompt_arr in _combo_to_prompt(context, combo):
                         deduped_arr = dedupe(prompt_arr, key=lambda r: r.dedupe_key)
                         correct_size = len(deduped_arr) == bound
-                        if correct_size and deduped_arr not in seen:
-                            seen.add(deduped_arr)
+                        arr_key = tuple(r.dedupe_key for r in deduped_arr)
+                        if correct_size and arr_key not in seen:
+                            seen.add(arr_key)
                             yield SamplingResult.joined_with_affixes(
                                 deduped_arr,
                                 separator=variant_command.separator,

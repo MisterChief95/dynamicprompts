@@ -13,15 +13,25 @@ class SamplingResult:
     """
 
     text: str
+    # Variables assigned during sampling of this result (e.g. from inside a variant branch).
+    # Excluded from hash/eq so that SamplingResult remains hashable even when variables
+    # contain Commands with unhashable fields (e.g. lists inside VariantCommand).
+    variables: tuple[tuple[str, object], ...] = dataclasses.field(
+        default=(),
+        compare=False,
+        hash=False,
+    )
 
     def __str__(self):
         return self.text
 
     @property
-    def dedupe_key(self) -> tuple[str]:
+    def dedupe_key(self) -> tuple:
         # Used by e.g. combinatorial sampling's fragment deduplication.
-        # Please make sure to update this if you add more fields to SamplingResult.
-        return (self.text,)
+        # Include variable names+repr so that branches that produce the same
+        # text but assign different variables are not collapsed into one result.
+        var_key = tuple((name, repr(val)) for name, val in self.variables)
+        return (self.text, var_key)
 
     def whitespace_squashed(self) -> SamplingResult:
         from dynamicprompts.utils import squash_whitespace
@@ -74,7 +84,13 @@ class SamplingResult:
         if separator:
             joined = removeprefix(joined, separator)
             joined = removesuffix(joined, separator)
-        return cls(text=joined)
+
+        # Merge variables from all constituent results (last assignment wins).
+        merged_vars: dict[str, object] = {}
+        for r in results_list:
+            for name, val in r.variables:
+                merged_vars[name] = val
+        return cls(text=joined, variables=tuple(merged_vars.items()))
 
     @classmethod
     def joined_with_affixes(

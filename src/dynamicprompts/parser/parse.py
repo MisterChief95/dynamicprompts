@@ -687,8 +687,19 @@ def create_parser(
         | wildcard
         | literal_sequence
     )
+    variant_variant_assignment = _configure_variable_assignment(
+        parser_config=parser_config,
+        prompt=variant_prompt,
+    )
+    variant_variant_assignment.set_parse_action(_parse_variable_assignment_command)
     variant_chunk = (
-        variable_access | conditional | wrap_command | variants | wildcard | variant_literal_sequence
+        variant_variant_assignment
+        | variable_access
+        | conditional
+        | wrap_command
+        | variants
+        | wildcard
+        | variant_literal_sequence
     )
     wildcard_chunk = (
         wildcard_variable_access
