@@ -158,6 +158,13 @@ class Sampler:
         command: VariableAccessCommand,
         context: SamplingContext,
     ) -> ResultGen:
+        # Variable lookup is deferred until first iteration so that variables
+        # assigned by earlier tokens in the same sequence (e.g. a switch/if
+        # result bubbling up via extra_vars) are visible even though
+        # sub_generators are created before the sequence loop runs.
+        #
+        # `yield from` (not `while True`) keeps the generator finite when the
+        # underlying command is finite, preserving combinatorial exhaustion.
         variable = command.name
         command_to_sample = context.variables.get(variable, command.default)
         if not command_to_sample:
@@ -167,7 +174,7 @@ class Sampler:
                 command_to_sample = LiteralCommand(context.unknown_variable_value)
             else:
                 command_to_sample = context.unknown_variable_value
-        return context.for_sampling_variable(variable).generator_from_command(
+        yield from context.for_sampling_variable(variable).generator_from_command(
             command_to_sample,
         )
 

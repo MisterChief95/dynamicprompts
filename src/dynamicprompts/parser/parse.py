@@ -71,6 +71,10 @@ sampler_symbol = sampler_random | sampler_combinatorial | sampler_cyclical
 variant_delim = pp.Suppress("$$")
 
 OPT_WS = pp.Opt(pp.White())  # Optional whitespace
+# Suppresses optional whitespace and/or commas — used at switch/if case
+# boundaries so that formatters that add commas after newlines don't break
+# the conditional syntax.
+OPT_WS_COMMA = pp.Suppress(pp.Opt(pp.Regex(r"[\s,]+")))
 
 var_name = pp.Word(pp.alphas + "_-", pp.alphanums + "_-")
 
@@ -544,14 +548,17 @@ def _configure_conditional(
     case_fall = pp.Opt(pp.Literal("&"))("fall_through")
 
     # Single switch case: label(&)?: prompt
+    # OPT_WS_COMMA at the boundaries strips whitespace and/or commas that
+    # formatters may insert after newlines, so users can write readable
+    # multi-line switch blocks without breaking the parser.
     switch_case = pp.Group(
-        OPT_WS
+        OPT_WS_COMMA
         + case_label
         + case_fall
         + pp.Suppress(":")
-        + OPT_WS
+        + OPT_WS_COMMA
         + prompt()("case_value")
-        + OPT_WS,
+        + OPT_WS_COMMA,
     )
     switch_cases = pp.Group(pp.delimited_list(switch_case, delim="|"))
 

@@ -1,3 +1,7 @@
+- 0.33.1
+  - Fix: Variable assignments inside switch cases now correctly bubble up to the outer sequence, so `${col}` is accessible after a `?{...}` block.
+  - Fix: Variable lookup is now deferred until generator iteration so pre-creating sub-generators no longer raises `KeyError` for variables not yet assigned.
+  - Fix: Switch case parser now tolerates leading/trailing commas and whitespace at case boundaries, so prompt formatters that insert commas after newlines no longer break `?{...}` syntax.
 - 0.33.0
   - Feature: Allow variable assignments inside variant branches, if/else branches, and switch cases. Variables assigned in the chosen branch are now visible to subsequent tokens in the same sequence (e.g. `{cat ${col=orange}|dog ${col=brown}}, ${col} fur`).
   - Enhancement: Combinatorial sampler correctly distinguishes variant branches that produce identical text but assign different variables (no longer collapses them).
