@@ -1,5 +1,7 @@
 # Dynamic Prompts
 
+> **Note: This is a fork of [adieyal/dynamicprompts](https://github.com/adieyal/dynamicprompts)** developed to add new features (conditional logic, prefix/suffix on variant output, comma squashing, and variable assignments in branches). See [Recent Changes](#recent-changes) below.
+
 ![MIT](https://img.shields.io/github/license/adieyal/dynamicprompts)
 &nbsp;-&nbsp;
 ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/adieyal/dynamicprompts/test.yml)
@@ -54,6 +56,7 @@ The dynamic prompts library powers the [Dynamic Prompts](https://github.com/adie
 - [Jinja2 templates](#jinja2-templates)
 - [Template syntax](#template-syntax)
   - [Syntax customisation](#syntax-customisation)
+- [Recent Changes](#recent-changes)
 - [New features](#new-features)
   - [Conditional if/else and switch/case](#conditional-ifelse-and-switchcase)
   - [Prefix and suffix on variant output](#prefix-and-suffix-on-variant-output)
@@ -464,6 +467,24 @@ parser_config = ParserConfig(variant_start="<", variant_end=">", wildcard_wrap="
 generator = RandomPromptGenerator(parser_config=parser_config)
 
 ```
+
+## Recent Changes
+
+This fork extends the upstream library with the following additions (v0.32.0–v0.33.1):
+
+**v0.33.1**
+- Fix: Variable assignments inside switch cases now correctly bubble up to the outer sequence.
+- Fix: Variable lookup is deferred until generator iteration, preventing `KeyError` for variables not yet assigned.
+- Fix: Switch case parser now tolerates leading/trailing commas and whitespace at case boundaries.
+
+**v0.33.0**
+- Variable assignments are now allowed inside variant branches, if/else branches, and switch cases. Variables assigned in the chosen branch are visible to subsequent tokens in the same sequence (e.g. `{cat ${col=orange}|dog ${col=brown}}, ${col} fur`).
+- Combinatorial sampler correctly distinguishes branches that produce identical text but assign different variables.
+
+**v0.32.0**
+- Repeated commas produced by empty sampling results are automatically squashed.
+- Prefix and suffix parameters (`p=`, `s=`) on variant output allow wrapping selected values (e.g. for Stable Diffusion prompt scheduling syntax).
+- Conditional if/else and switch/case logic for variable-driven prompt branching.
 
 ## New features
 
