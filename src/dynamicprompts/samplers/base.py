@@ -233,11 +233,12 @@ class Sampler:
         while True:
             condition_result = self._evaluate_condition(command.condition, context)
             if condition_result:
-                yield next(context.generator_from_command(command.if_value))
+                result = next(context.generator_from_command(command.if_value))
             elif command.else_value is not None:
-                yield next(context.generator_from_command(command.else_value))
+                result = next(context.generator_from_command(command.else_value))
             else:
-                yield SamplingResult(text="")
+                result = SamplingResult(text="")
+            yield result
 
     def _get_switch(
         self,
@@ -279,4 +280,13 @@ class Sampler:
                 if not case.fall_through:
                     break
 
-            yield SamplingResult.joined(results, separator=", ")
+            joined = SamplingResult.joined(results, separator=", ")
+            # Bubble up variables assigned inside the matched case(s) so the
+            # outer sequence can apply them to subsequent tokens.
+            all_vars: dict[str, object] = {}
+            for r in results:
+                all_vars.update(dict(r.variables))
+            if all_vars:
+                yield dataclasses.replace(joined, variables=tuple(all_vars.items()))
+            else:
+                yield joined
