@@ -39,6 +39,7 @@ class SamplingContext:
         default_factory=_build_default_samplers,
     )
     ignore_whitespace: bool = False
+    squash_commas: bool = True
     parser_config: ParserConfig = default_parser_config
     rand: Random = DEFAULT_RANDOM
     variables: dict[str, Command] = dataclasses.field(default_factory=dict)
@@ -123,6 +124,9 @@ class SamplingContext:
             raise TypeError(f"Expected prompt to be str or Command, got {type(prompt)}")
 
         gen = self.generator_from_command(command)
+
+        if self.squash_commas:
+            gen = (res.commas_squashed() for res in gen)
 
         if self.ignore_whitespace:
             gen = (res.whitespace_squashed() for res in gen)

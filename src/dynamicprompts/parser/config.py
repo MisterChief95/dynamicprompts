@@ -12,6 +12,9 @@ class ParserConfig:
     variable_end: str = "}"
     wrap_start: str = "%{"
     wrap_end: str = "}"
+    conditional_start: str = "?{"
+    conditional_alt_start: str = "@if{"
+    conditional_end: str = "}"
 
 
 default_parser_config = ParserConfig()

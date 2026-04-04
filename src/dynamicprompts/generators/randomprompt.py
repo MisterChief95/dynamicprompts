@@ -29,6 +29,7 @@ class RandomPromptGenerator(PromptGenerator):
         seed: int | None = None,
         unlink_seed_from_prompt: bool = False,
         ignore_whitespace: bool = False,
+        squash_commas: bool = True,
         parser_config: ParserConfig = default_parser_config,
     ) -> None:
         wildcard_manager = wildcard_manager or WildcardManager()
@@ -36,6 +37,7 @@ class RandomPromptGenerator(PromptGenerator):
             wildcard_manager=wildcard_manager,
             default_sampling_method=SamplingMethod.RANDOM,
             ignore_whitespace=ignore_whitespace,
+            squash_commas=squash_commas,
             parser_config=parser_config,
             rand=_get_random(
                 seed=seed,
