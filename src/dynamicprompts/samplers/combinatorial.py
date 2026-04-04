@@ -132,9 +132,11 @@ class CombinatorialSampler(Sampler):
                         correct_size = len(deduped_arr) == bound
                         if correct_size and deduped_arr not in seen:
                             seen.add(deduped_arr)
-                            yield SamplingResult.joined(
+                            yield SamplingResult.joined_with_affixes(
                                 deduped_arr,
                                 separator=variant_command.separator,
+                                prefix=variant_command.prefix,
+                                suffix=variant_command.suffix,
                             )
 
     def _get_wildcard(

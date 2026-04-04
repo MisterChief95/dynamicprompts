@@ -28,6 +28,11 @@ class SamplingResult:
 
         return dataclasses.replace(self, text=squash_whitespace(self.text))
 
+    def commas_squashed(self) -> SamplingResult:
+        from dynamicprompts.utils import squash_commas
+
+        return dataclasses.replace(self, text=squash_commas(self.text))
+
     def text_replaced(self, new_text: str) -> SamplingResult:
         return dataclasses.replace(self, text=new_text)
 
@@ -70,3 +75,18 @@ class SamplingResult:
             joined = removeprefix(joined, separator)
             joined = removesuffix(joined, separator)
         return cls(text=joined)
+
+    @classmethod
+    def joined_with_affixes(
+        cls,
+        results: Iterable[SamplingResult],
+        *,
+        separator: str,
+        prefix: str = "",
+        suffix: str = "",
+    ) -> SamplingResult:
+        """Join results with separator, then wrap with prefix/suffix if non-empty."""
+        result = cls.joined(results, separator=separator)
+        if result.text and (prefix or suffix):
+            return result.text_replaced(prefix + result.text + suffix)
+        return result

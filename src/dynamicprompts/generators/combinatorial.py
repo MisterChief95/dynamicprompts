@@ -17,6 +17,7 @@ class CombinatorialPromptGenerator(PromptGenerator):
         self,
         wildcard_manager: WildcardManager | None = None,
         ignore_whitespace: bool = False,
+        squash_commas: bool = True,
         parser_config: ParserConfig = default_parser_config,
     ) -> None:
         wildcard_manager = wildcard_manager or WildcardManager()
@@ -24,6 +25,7 @@ class CombinatorialPromptGenerator(PromptGenerator):
             wildcard_manager=wildcard_manager,
             default_sampling_method=SamplingMethod.COMBINATORIAL,
             ignore_whitespace=ignore_whitespace,
+            squash_commas=squash_commas,
             parser_config=parser_config,
         )
 

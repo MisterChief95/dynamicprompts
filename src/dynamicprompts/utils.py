@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import random
 from itertools import cycle
 from typing import Any, Iterable, TypeVar
@@ -8,6 +9,8 @@ from dynamicprompts.sampling_result import SamplingResult
 from dynamicprompts.types import ResultGen
 
 T = TypeVar("T")
+
+_COMMA_SQUASH_RE = re.compile(r"(\s*,\s*){2,}")
 
 
 def removeprefix(s: str, prefix: str) -> str:
@@ -20,6 +23,11 @@ def removesuffix(s: str, suffix: str) -> str:
 
 def squash_whitespace(s: str) -> str:
     return " ".join(s.split())
+
+
+def squash_commas(s: str) -> str:
+    """Collapse runs of multiple commas (with optional whitespace) into a single comma-space."""
+    return _COMMA_SQUASH_RE.sub(", ", s)
 
 
 def is_empty_line(line: str | None) -> bool:
@@ -45,8 +53,15 @@ def rotate_and_join(
     generators: Iterable[ResultGen],
     *,
     separator: str,
+    prefix: str = "",
+    suffix: str = "",
 ) -> SamplingResult:
-    return SamplingResult.joined(rotate_all(generators), separator=separator)
+    return SamplingResult.joined_with_affixes(
+        rotate_all(generators),
+        separator=separator,
+        prefix=prefix,
+        suffix=suffix,
+    )
 
 
 def next_sampler_next_value(
