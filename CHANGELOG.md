@@ -1,3 +1,7 @@
+- 0.32.0
+  - Feature: Support squashing repeated commas from empty sampling results.
+  - Feature: Add support for specifiying prefixes and suffixes.
+  - Feature: Add conditional logic (if/else, switch) for more complex prompts.
 - 0.31.0
   - Feature: Add Variable Support in Wildcard Paths (#110, #114) (thanks @mwootendev!)
   - Feature: Add wrap command (#102) (@akx)
