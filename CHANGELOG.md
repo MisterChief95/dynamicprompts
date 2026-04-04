@@ -1,3 +1,6 @@
+- 0.33.0
+  - Feature: Allow variable assignments inside variant branches, if/else branches, and switch cases. Variables assigned in the chosen branch are now visible to subsequent tokens in the same sequence (e.g. `{cat ${col=orange}|dog ${col=brown}}, ${col} fur`).
+  - Enhancement: Combinatorial sampler correctly distinguishes variant branches that produce identical text but assign different variables (no longer collapses them).
 - 0.32.0
   - Feature: Support squashing repeated commas from empty sampling results.
   - Feature: Add support for specifiying prefixes and suffixes.
