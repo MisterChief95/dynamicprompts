@@ -199,6 +199,11 @@ class Sampler:
             is_empty = left_text == ""
             return is_empty if condition.operator == "empty" else not is_empty
 
+        if condition.operator in ("bool", "!bool"):
+            # Only "true" (case-insensitive) is truthy; blank/null/anything-else is falsy
+            is_true = left_text.lower() == "true"
+            return is_true if condition.operator == "bool" else not is_true
+
         assert condition.right is not None, "Binary operators require a right operand"
         right_text = next(context.generator_from_command(condition.right)).text.strip()
 

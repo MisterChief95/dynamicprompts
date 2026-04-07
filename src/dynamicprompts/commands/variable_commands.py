@@ -11,6 +11,7 @@ class VariableAssignmentCommand(Command):
     value: Command
     immediate: bool
     overwrite: bool = True
+    is_boolean: bool = False
     sampling_method = None
 
 

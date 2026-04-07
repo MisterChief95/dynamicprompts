@@ -1,3 +1,5 @@
+- 0.34.0
+  - Feature: Boolean variable type. Declare with `${name=!bool}` (defaults to false). Check with `?{${name} $$ then $$ else}` or negate with `?{!${name} $$ then}`. Blank/null variables evaluate as false in boolean context.
 - 0.33.1
   - Fix: Variable assignments inside switch cases now correctly bubble up to the outer sequence, so `${col}` is accessible after a `?{...}` block.
   - Fix: Variable lookup is now deferred until generator iteration so pre-creating sub-generators no longer raises `KeyError` for variables not yet assigned.
