@@ -171,11 +171,17 @@ class SamplingContext:
         if command.immediate:
             if isinstance(command.value, LiteralCommand):
                 # Optimization: if the variable assignment is a literal, just use that
-                return command.value
-            # Sample the variable assignment command to get the value
-            return LiteralCommand(
-                str(
-                    next(self.generator_from_command(command.value)),
-                ),  # TODO: sus str cast from result?
-            )
-        return command.value
+                resolved: Command = command.value
+            else:
+                # Sample the variable assignment command to get the value
+                resolved = LiteralCommand(
+                    str(
+                        next(self.generator_from_command(command.value)),
+                    ),  # TODO: sus str cast from result?
+                )
+        else:
+            resolved = command.value
+        if command.is_boolean and isinstance(resolved, LiteralCommand):
+            normalized = "true" if resolved.literal.lower() == "true" else "false"
+            resolved = LiteralCommand(normalized)
+        return resolved

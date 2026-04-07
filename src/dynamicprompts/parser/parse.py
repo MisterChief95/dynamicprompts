@@ -265,6 +265,7 @@ def _configure_variable_assignment(
     parser_config: ParserConfig,
     prompt: pp.ParserElement,
 ) -> pp.ParserElement:
+    bool_keyword = pp.Keyword("bool")("bool_keyword")
     variable_assignment = pp.Group(
         pp.Suppress(parser_config.variable_start)
         + OPT_WS
@@ -274,7 +275,7 @@ def _configure_variable_assignment(
         + pp.Literal("=")
         + pp.Opt(pp.Literal("!"))("immediate")
         + OPT_WS
-        + prompt()("value")
+        + (bool_keyword | prompt()("value"))
         + OPT_WS
         + pp.Suppress(parser_config.variable_end),
     )
@@ -454,11 +455,18 @@ def _parse_variable_assignment_command(
     parse_result: pp.ParseResults,
 ) -> VariableAssignmentCommand:
     parts = parse_result[0].as_dict()
+    # is_boolean only when =!bool (immediate flag + bool keyword together)
+    is_boolean = "bool_keyword" in parts and "immediate" in parts
+    if is_boolean:
+        value: Command = LiteralCommand("false")
+    else:
+        value = parts.get("value", LiteralCommand("bool"))
     return VariableAssignmentCommand(
         name=parts["name"],
-        value=parts["value"],
+        value=value,
         overwrite=("preserve_existing_value" not in parts),
-        immediate=("immediate" in parts),
+        immediate=("immediate" in parts) and not is_boolean,
+        is_boolean=is_boolean,
     )
 
 
@@ -575,10 +583,28 @@ def _configure_conditional(
         + cond_end,
     )
 
-    # Try if forms first (they have operators), then switch
+    # Boolean unary: ?{ ${var} $$ then ($$ else)? } or ?{ !${var} $$ then }
+    bool_negation = pp.Opt(pp.Literal("!"))("bool_negation")
+    bool_if_command = pp.Group(
+        cond_start
+        + OPT_WS
+        + bool_negation
+        + OPT_WS
+        + variable_access_inner("left")
+        + OPT_WS
+        + variant_delim
+        + OPT_WS
+        + prompt()("if_value")
+        + pp.Opt(variant_delim + OPT_WS + prompt()("else_value"))
+        + OPT_WS
+        + cond_end,
+    )
+
+    # Try if forms first (they have operators), then bool (no operator, variable-only), then switch
     conditional = (
         if_command("if_command")
         | unary_if_command("unary_if_command")
+        | bool_if_command("bool_if_command")
         | switch_command("switch_command")
     )
     return conditional.leave_whitespace()
@@ -601,14 +627,18 @@ def _parse_conditional_command(parse_result: pp.ParseResults) -> IfCommand | Swi
     result_name = parse_result.get_name()
     parts = parse_result[0]
 
-    if result_name in ("if_command", "unary_if_command"):
+    if result_name in ("if_command", "unary_if_command", "bool_if_command"):
         left = _extract_command(parts["left"])
         right = _extract_command(parts["right"]) if "right" in parts else None
         if_value = _extract_command(parts["if_value"])
         else_value = _extract_command(parts["else_value"]) if "else_value" in parts else None
+        if result_name == "bool_if_command":
+            operator = "!bool" if "bool_negation" in parts and parts["bool_negation"] else "bool"
+        else:
+            operator = parts["operator"]
         condition = Condition(
             left=left,
-            operator=parts["operator"],
+            operator=operator,
             right=right,
         )
         return IfCommand(
