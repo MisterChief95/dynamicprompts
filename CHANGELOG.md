@@ -1,3 +1,5 @@
+- 0.35.0
+  - Enhancement: `${name=bool}` now declares a random boolean (re-sampled each generation). `${name=!bool}` declares a random boolean sampled once and reused across the batch (immediate).
 - 0.34.0
   - Feature: Boolean variable type. Declare with `${name=!bool}` (defaults to false). Check with `?{${name} $$ then $$ else}` or negate with `?{!${name} $$ then}`. Blank/null variables evaluate as false in boolean context.
 - 0.33.1
