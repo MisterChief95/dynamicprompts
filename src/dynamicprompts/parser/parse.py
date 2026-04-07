@@ -455,17 +455,23 @@ def _parse_variable_assignment_command(
     parse_result: pp.ParseResults,
 ) -> VariableAssignmentCommand:
     parts = parse_result[0].as_dict()
-    # is_boolean only when =!bool (immediate flag + bool keyword together)
-    is_boolean = "bool_keyword" in parts and "immediate" in parts
+    # bool_keyword: ${x=bool} → random per generation; ${x=!bool} → sampled once (immediate)
+    is_boolean = "bool_keyword" in parts
     if is_boolean:
-        value: Command = LiteralCommand("false")
+        value: Command = VariantCommand(
+            variants=[
+                VariantOption(LiteralCommand("true")),
+                VariantOption(LiteralCommand("false")),
+            ],
+            sampling_method=SamplingMethod.RANDOM,
+        )
     else:
-        value = parts.get("value", LiteralCommand("bool"))
+        value = parts.get("value", LiteralCommand(""))
     return VariableAssignmentCommand(
         name=parts["name"],
         value=value,
         overwrite=("preserve_existing_value" not in parts),
-        immediate=("immediate" in parts) and not is_boolean,
+        immediate="immediate" in parts,
         is_boolean=is_boolean,
     )
 

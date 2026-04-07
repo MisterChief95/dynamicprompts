@@ -2,15 +2,16 @@
 Tests for boolean variable type.
 
 Syntax:
-  - Declaration: ${name=!bool}  (defaults to false)
-  - Unary check:  ?{${name} $$ then $$ else}
-  - Negation:     ?{!${name} $$ then $$ else}
+  - ${name=bool}   → random true/false, re-sampled each generation
+  - ${name=!bool}  → random true/false, sampled once and reused (immediate)
+  - Unary check:   ?{${name} $$ then $$ else}
+  - Negation:      ?{!${name} $$ then $$ else}
   - Blank/null resolves as false in boolean context.
 """
 from __future__ import annotations
 
 import pytest
-from dynamicprompts.commands import LiteralCommand
+from dynamicprompts.commands import LiteralCommand, VariantCommand, VariantOption
 from dynamicprompts.commands.conditional_commands import Condition, IfCommand
 from dynamicprompts.commands.variable_commands import (
     VariableAccessCommand,
@@ -45,31 +46,40 @@ def _sample(prompt: str, method: SamplingMethod = SamplingMethod.RANDOM, unknown
 
 class TestBooleanAssignmentParsing:
     def test_bool_declaration_is_boolean_flag(self):
-        cmd = parse("${isThing=!bool}")
+        cmd = parse("${isThing=bool}")
         assert isinstance(cmd, VariableAssignmentCommand)
         assert cmd.name == "isThing"
         assert cmd.is_boolean is True
-        assert isinstance(cmd.value, LiteralCommand)
-        assert cmd.value.literal == "false"
+        assert isinstance(cmd.value, VariantCommand)
+        assert len(cmd.value.variants) == 2
 
     def test_bool_declaration_immediate_is_false(self):
-        """immediate should be False for bool declarations — it's meaningless since value is already a literal."""
-        cmd = parse("${isThing=!bool}")
+        """${x=bool} — not immediate, re-sampled each generation."""
+        cmd = parse("${isThing=bool}")
         assert cmd.immediate is False
 
-    def test_plain_bool_string_is_not_boolean(self):
-        """${x=bool} without ! should parse 'bool' as a plain literal string."""
-        cmd = parse("${x=bool}")
+    def test_bool_immediate_declaration(self):
+        """${x=!bool} — immediate, sampled once and reused."""
+        cmd = parse("${isThing=!bool}")
         assert isinstance(cmd, VariableAssignmentCommand)
-        assert cmd.is_boolean is False
-        assert isinstance(cmd.value, LiteralCommand)
-        assert cmd.value.literal == "bool"
+        assert cmd.is_boolean is True
+        assert cmd.immediate is True
+        assert isinstance(cmd.value, VariantCommand)
+        assert len(cmd.value.variants) == 2
 
     def test_preserve_bool_declaration(self):
-        """${x?=!bool} should set is_boolean and preserve_existing."""
+        """${x?=bool} should set is_boolean and preserve_existing."""
+        cmd = parse("${x?=bool}")
+        assert isinstance(cmd, VariableAssignmentCommand)
+        assert cmd.is_boolean is True
+        assert cmd.overwrite is False
+
+    def test_preserve_bool_immediate_declaration(self):
+        """${x?=!bool} should set is_boolean, immediate, and preserve_existing."""
         cmd = parse("${x?=!bool}")
         assert isinstance(cmd, VariableAssignmentCommand)
         assert cmd.is_boolean is True
+        assert cmd.immediate is True
         assert cmd.overwrite is False
 
 
@@ -100,8 +110,18 @@ class TestBooleanConditionalParsing:
 # ---------------------------------------------------------------------------
 
 class TestBooleanEvaluation:
-    def test_default_false(self):
-        assert _sample("${flag=!bool}?{${flag} $$ yes $$ no}") == "no"
+    def test_bool_random_per_generation(self):
+        """${flag=bool} produces both true and false across multiple generations."""
+        ctx = _make_ctx(method=SamplingMethod.RANDOM)
+        results = {str(r).strip() for r in ctx.sample_prompts("${flag=bool}?{${flag} $$ yes $$ no}", 20)}
+        assert "yes" in results and "no" in results
+
+    def test_bool_immediate_sampled_once(self):
+        """${flag=!bool} picks once and reuses across all results in a batch."""
+        ctx = _make_ctx(method=SamplingMethod.CYCLICAL)
+        results = [str(r).strip() for r in ctx.sample_prompts("${flag=!bool}?{${flag} $$ yes $$ no}", 4)]
+        # All 4 results must be the same value since it's immediate
+        assert len(set(results)) == 1
 
     def test_set_true_then_check(self):
         assert _sample("${flag=true}?{${flag} $$ yes $$ no}") == "yes"
@@ -122,8 +142,9 @@ class TestBooleanEvaluation:
     def test_case_insensitive_true(self):
         assert _sample("${flag=True}?{${flag} $$ yes $$ no}") == "yes"
 
-    def test_bool_declaration_default_false_no_else(self):
-        assert _sample("${flag=!bool}?{${flag} $$ yes}") == ""
+    def test_bool_no_else_when_false(self):
+        """When bool picks false and there's no else branch, output is empty."""
+        assert _sample("${flag=false}?{${flag} $$ yes}") == ""
 
     def test_bool_normalization_in_context(self):
         """Setting to TRUE (all caps) should still be truthy after normalization."""
@@ -140,10 +161,6 @@ class TestBooleanBackwardCompatibility:
         ctx = _make_ctx(method=SamplingMethod.CYCLICAL)
         results = [str(r).strip() for r in ctx.sample_prompts("${x=!{true|false}}?{${x} == true $$ a $$ b}", 4)]
         assert "a" in results or "b" in results
-
-    def test_plain_bool_string_literal_unchanged(self):
-        """${x=bool} without ! stores the literal string 'bool', no boolean logic."""
-        assert _sample("${x=bool}${x}") == "bool"
 
     def test_string_equality_still_works(self):
         assert _sample("${x=hello}?{${x} == hello $$ yes $$ no}") == "yes"
