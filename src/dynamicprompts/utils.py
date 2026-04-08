@@ -109,6 +109,7 @@ def choose_without_replacement(
         for _ in range(num_choices):
             chosen = rand.choices(values, weights=weights, k=1)[0]
             chosen_values.append(chosen)
-            weights.remove(weights[values.index(chosen)])
-            values.remove(chosen)
+            idx = values.index(chosen)
+            values.pop(idx)
+            weights.pop(idx)
         return chosen_values
