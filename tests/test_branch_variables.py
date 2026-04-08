@@ -53,8 +53,7 @@ class TestVariantBranchAssignment:
     def test_variable_follows_chosen_branch_combinatorial(self, wildcard_manager):
         ctx = _ctx(wildcard_manager, SamplingMethod.COMBINATORIAL)
         results = _sample_all(ctx, "{cat ${col=orange}|dog ${col=brown}}, ${col} fur")
-        # trailing space before comma because the literals are "cat " / "dog "
-        assert sorted(results) == sorted(["cat , orange fur", "dog , brown fur"])
+        assert sorted(results) == sorted(["cat, orange fur", "dog, brown fur"])
 
     def test_assignment_strips_from_output(self, wildcard_manager):
         """The assignment token itself should not appear as text in the output."""
