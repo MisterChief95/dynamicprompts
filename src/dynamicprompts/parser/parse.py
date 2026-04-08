@@ -17,8 +17,9 @@ A parser for a prompt grammar which is roughly as follows:
 <wildcard> ::= <wildcard_enclosure> <sampling_method> <path> <wildcard_enclosure>
 <wildcard_enclosure> ::= "__" # Can be configured to an arbitrary string
 <path>::=  ~"__" + [^{}#]+"
-<literal>:=[^#<variant_start>]+
-<variant_literal>:=[^#$|<variant_start><variant_end>]+
+<literal>:=[^#<variant_start>]+ | <bracket_block>
+<variant_literal>:=[^#$|<variant_start><variant_end>]+ | <bracket_block>
+<bracket_block>:="[" [^]]* "]"    # SD WebUI scheduling passthrough; | inside is not a separator
 <literal_sequence> ::= <literal>+
 <variant_literal_sequence> ::= <variant_literal>+
 <variable_assignment> ::= "${" <variable_name> "=" <variant_chunk> "}"
@@ -85,7 +86,7 @@ sampler_symbol_to_method = {
 }
 
 
-def _configure_range() -> pp.ParserElement:
+def _configure_range(parser_config: ParserConfig | None = None) -> pp.ParserElement:
     hyphen = pp.Suppress("-")
 
     # Exclude:
@@ -98,11 +99,22 @@ def _configure_range() -> pp.ParserElement:
         "separator",
     ).leave_whitespace()
 
-    bound = pp.common.integer
-    bound_range1 = bound("exact")
-    bound_range2 = bound("lower") + hyphen
-    bound_range3 = hyphen + bound("upper")
-    bound_range4 = bound("lower") + hyphen + bound("upper")
+    # Variable bound: ${varname} — parsed as a VariableAccessCommand at sample time
+    _var_start = (parser_config.variable_start if parser_config else "${")
+    _var_end = (parser_config.variable_end if parser_config else "}")
+    variable_bound = pp.Group(
+        pp.Suppress(pp.Literal(_var_start))
+        + var_name("name")
+        + pp.Suppress(pp.Literal(_var_end)),
+    )("var_bound").leave_whitespace()
+
+    int_bound = pp.common.integer
+    # Each side of a range can be an integer or a variable reference
+    single_bound = variable_bound | int_bound
+    bound_range1 = single_bound("exact")
+    bound_range2 = single_bound("lower") + hyphen
+    bound_range3 = hyphen + single_bound("upper")
+    bound_range4 = single_bound("lower") + hyphen + single_bound("upper")
 
     bound_range = pp.Group(
         bound_range4 | bound_range3 | bound_range2 | bound_range1,
@@ -204,7 +216,16 @@ def _configure_literal_sequence(
     )(
         "literal",
     ).leave_whitespace()
-    literal_sequence = pp.OneOrMore(literal)
+
+    # SD WebUI prompt scheduling uses [a|b] syntax. Treat [...] as an opaque
+    # bracket block so that | inside square brackets is not consumed as a
+    # variant/switch-case separator. Only add this when [ is not already
+    # configured as the variant_start, to avoid conflict with custom brace configs.
+    if parser_config.variant_start != "[":
+        bracket_block = pp.Regex(r"\[[^\]]*\]")("literal").leave_whitespace()
+        literal_sequence = pp.OneOrMore(bracket_block | literal)
+    else:
+        literal_sequence = pp.OneOrMore(literal)
 
     return literal_sequence
 
@@ -409,15 +430,30 @@ def _parse_bound_expr(expr, max_options):
 
     expr = expr[0]
 
+    def _as_bound(val) -> int | VariableAccessCommand:
+        """Convert a parsed bound value to int or VariableAccessCommand."""
+        # Unwrap list/ParseResults layers until we hit an int or a variable name
+        while isinstance(val, (list, pp.ParseResults)):
+            if isinstance(val, pp.ParseResults) and "name" in val:
+                return VariableAccessCommand(name=val["name"])
+            if isinstance(val, dict):
+                return VariableAccessCommand(name=val["name"])
+            if len(val) == 0:
+                break
+            val = val[0]
+        if isinstance(val, dict):
+            return VariableAccessCommand(name=val["name"])
+        return int(val)
+
     if "range" in expr:
         rng = expr["range"]
         if "exact" in rng:
-            lbound = ubound = rng["exact"]
+            lbound = ubound = _as_bound(rng["exact"])
         else:
             if "lower" in expr["range"]:
-                lbound = int(expr["range"]["lower"])
+                lbound = _as_bound(expr["range"]["lower"])
             if "upper" in expr["range"]:
-                ubound = int(expr["range"]["upper"])
+                ubound = _as_bound(expr["range"]["upper"])
 
     if "separator" in expr:
         separator = expr["separator"][0]
@@ -676,7 +712,7 @@ def create_parser(
     *,
     parser_config: ParserConfig,
 ) -> pp.ParserElement:
-    bound_expr = _configure_range()
+    bound_expr = _configure_range(parser_config=parser_config)
 
     prompt = pp.Forward()
     variant_prompt = pp.Forward()

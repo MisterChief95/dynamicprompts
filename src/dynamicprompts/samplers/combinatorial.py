@@ -130,16 +130,17 @@ class CombinatorialSampler(Sampler):
 
         if is_wildcard_variant:
             wildcard_command = cast(WildcardCommand, variant_command.values[0])
+            min_b, max_b = variant_command.resolve_bounds(context)
             wildcard_variant = wildcard_to_variant(
                 wildcard_command,
                 context=context,
-                min_bound=variant_command.min_bound,
-                max_bound=variant_command.max_bound,
+                min_bound=min_b,
+                max_bound=max_b,
                 separator=variant_command.separator,
             )
             yield from self._get_variant(wildcard_variant, context)
         else:
-            variant_command = variant_command.adjust_range()
+            variant_command = variant_command.adjust_range(context)
             for bound in range(
                 variant_command.min_bound,
                 variant_command.max_bound + 1,
