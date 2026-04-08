@@ -1,3 +1,8 @@
+- 0.36.1
+  - Performance: Fix O(n²) weighted selection in `choose_without_replacement` (use index-based `pop` instead of `list.remove`).
+  - Performance: `CommandCollection.get_value` now uses a dict index for O(1) lookup instead of O(n) linear search.
+  - Performance: Wildcard value cache uses `OrderedDict` with FIFO single-entry eviction instead of clearing all 100 entries at once.
+  - Performance: Combined dedup+sort of wildcard values into a single pass when both are enabled.
 - 0.35.0
   - Enhancement: `${name=bool}` now declares a random boolean (re-sampled each generation). `${name=!bool}` declares a random boolean sampled once and reused across the batch (immediate).
 - 0.34.0
