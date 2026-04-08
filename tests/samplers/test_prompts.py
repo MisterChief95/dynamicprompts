@@ -205,30 +205,30 @@ class TestPrompts:
             (
                 lazy_fixture("random_sampling_context"),
                 [
-                    "A red,green square",
-                    "A green,red circle",
-                    "A red,green square",
-                    "A red,green square",
-                    "A red,green square",
+                    "A red, green square",
+                    "A green, red circle",
+                    "A red, green square",
+                    "A red, green square",
+                    "A red, green square",
                 ],
             ),
             (
                 lazy_fixture("cyclical_sampling_context"),
                 [
-                    "A red,green square",
-                    "A green,red circle",
-                    "A red,green square",
-                    "A green,red circle",
-                    "A red,green square",
+                    "A red, green square",
+                    "A green, red circle",
+                    "A red, green square",
+                    "A green, red circle",
+                    "A red, green square",
                 ],
             ),
             (
                 lazy_fixture("combinatorial_sampling_context"),
                 [
-                    "A red,green square",
-                    "A red,green circle",
-                    "A green,red square",
-                    "A green,red circle",
+                    "A red, green square",
+                    "A red, green circle",
+                    "A green, red square",
+                    "A green, red circle",
                 ],
             ),
         ],
@@ -243,9 +243,8 @@ class TestPrompts:
         template = "A {2$$red|green} {square|circle}"
 
         if isinstance(sampler, RandomSampler):
-            split = [v.split() for v in expected]
-            _, colours, shapes = zip(*split)
-            colour_pairs = [c.split(",") for c in colours]
+            shapes = [v.rsplit(" ", 1)[-1] for v in expected]
+            colour_pairs = [v[len("A "):-(len(s) + 1)].split(", ") for v, s in zip(expected, shapes)]
 
             random_choices = []
 
@@ -268,11 +267,11 @@ class TestPrompts:
             (
                 lazy_fixture("random_sampling_context"),
                 [
-                    "A red,green square",
+                    "A red, green square",
                     "A red square",
-                    "A red,green square",
-                    "A red,green square",
-                    "A red,green square",
+                    "A red, green square",
+                    "A red, green square",
+                    "A red, green square",
                 ],
             ),
             (
@@ -281,8 +280,8 @@ class TestPrompts:
                     "A red square",
                     "A green square",
                     "A blue square",
-                    "A red,green square",
-                    "A red,blue square",
+                    "A red, green square",
+                    "A red, blue square",
                 ],
             ),
             (
@@ -291,8 +290,8 @@ class TestPrompts:
                     "A red square",
                     "A green square",
                     "A blue square",
-                    "A red,green square",
-                    "A red,blue square",
+                    "A red, green square",
+                    "A red, blue square",
                 ],
             ),
         ],
@@ -307,9 +306,7 @@ class TestPrompts:
         template = "A {1-2$$red|green|blue} square"
 
         if isinstance(sampler, RandomSampler):
-            split = [v.split() for v in expected]
-            _, colours, _ = zip(*split)
-            colour_pairs = [c.split(",") for c in colours]
+            colour_pairs = [v[len("A "):-len(" square")].split(", ") for v in expected]
             random_choices = [
                 [LiteralCommand(p) for p in pair] for pair in colour_pairs
             ]
@@ -540,8 +537,8 @@ class TestPrompts:
             with patch_random_sampler_wildcard_choice(expected):
                 with patch_random_sampler_variant_choices(variant_choices):
                     black = ["black"] * len(expected)
-                    arr1 = zipstr(expected, black, sep=",")
-                    arr2 = zipstr(black, expected, sep=",")
+                    arr1 = zipstr(expected, black, sep=", ")
+                    arr2 = zipstr(black, expected, sep=", ")
                     expected = interleave(arr1, arr2)
 
                     prompts = list(
@@ -550,12 +547,12 @@ class TestPrompts:
         else:
             if isinstance(sampler, CyclicalSampler):
                 black = ["black"] * len(expected)
-                arr1 = zipstr(expected, black, sep=",")
-                arr2 = zipstr(black, expected, sep=",")
+                arr1 = zipstr(expected, black, sep=", ")
+                arr2 = zipstr(black, expected, sep=", ")
                 expected = interleave(arr1, arr2)
             elif isinstance(sampler, CombinatorialSampler):
-                expected = [f"{e},black" for e in expected] + [
-                    f"black,{e}" for e in expected
+                expected = [f"{e}, black" for e in expected] + [
+                    f"black, {e}" for e in expected
                 ]
 
             prompts = sampling_context.sample_prompts(template, len(expected))
@@ -576,7 +573,7 @@ class TestPrompts:
     ):
         template = "A red {3$$square|circle}"
         prompts = sampling_context.sample_prompts(template, 10)
-        expected = ("A red square,circle", "A red circle,square")
+        expected = ("A red square, circle", "A red circle, square")
         for el in prompts:
             assert str(el) in expected
 

@@ -10,7 +10,7 @@ from dynamicprompts.types import ResultGen
 
 T = TypeVar("T")
 
-_COMMA_SQUASH_RE = re.compile(r"(\s*,\s*){2,}")
+_COMMA_SQUASH_RE = re.compile(r"\s*,\s*")
 
 
 def removeprefix(s: str, prefix: str) -> str:

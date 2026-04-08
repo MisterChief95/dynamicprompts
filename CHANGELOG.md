@@ -1,3 +1,6 @@
+- 0.36.2
+  - Fix: `squash_commas` now normalizes any comma with inconsistent spacing (e.g. `a,b`) to `a, b`, not just runs of multiple commas.
+  - Fix: `CommandCollection` dict index now uses `id(command)` to avoid `TypeError` on unhashable commands (e.g. `VariantCommand` with list fields).
 - 0.36.1
   - Performance: Fix O(n²) weighted selection in `choose_without_replacement` (use index-based `pop` instead of `list.remove`).
   - Performance: `CommandCollection.get_value` now uses a dict index for O(1) lookup instead of O(n) linear search.
