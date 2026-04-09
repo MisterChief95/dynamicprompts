@@ -32,9 +32,8 @@ Note that whitespace is preserved in case it is significant to the user.
 from __future__ import annotations
 
 import re
-from functools import partial
+from functools import lru_cache, partial
 from typing import Iterable
-from weakref import WeakKeyDictionary
 
 import pyparsing as pp
 
@@ -250,7 +249,7 @@ def _configure_variants(
     variant = pp.Group(
         OPT_WS + pp.Opt(weight, default=1)("weight") + prompt()("val") + OPT_WS,
     )
-    variants_list = pp.Group(pp.delimited_list(variant, delim="|"))
+    variants_list = pp.Group(pp.DelimitedList(variant, delim="|"))
 
     variants = pp.Group(
         variant_start
@@ -539,10 +538,12 @@ def _configure_conditional(
     )
     cond_end = pp.Suppress(parser_config.conditional_end)
 
-    # Condition operand: a restricted expression that stops before operators, $$, }, |
-    # Can be a variable access ${x} or a literal value
-    cond_operand_literal = pp.Regex(r"[^\s=!<>$}|]+").leave_whitespace()
-    cond_operand_literal.set_parse_action(lambda t: LiteralCommand(t[0]))
+    # Condition operand: matches literal text up to comparison operators, $$, }, or |.
+    # Allows internal whitespace so "golden hour" is matched as one token.
+    # The negative lookahead on $$ prevents consuming the branch separator;
+    # .strip() on the parse action trims any trailing space before $$.
+    cond_operand_literal = pp.Regex(r"(?:(?!\$\$)[^=!<>$}|])+").leave_whitespace()
+    cond_operand_literal.set_parse_action(lambda t: LiteralCommand(t[0].strip()))
     variable_access_inner = _configure_variable_access(
         parser_config=parser_config,
         prompt=prompt,
@@ -610,7 +611,7 @@ def _configure_conditional(
         + prompt()("case_value")
         + OPT_WS_COMMA,
     )
-    switch_cases = pp.Group(pp.delimited_list(switch_case, delim="|"))
+    switch_cases = pp.Group(pp.DelimitedList(switch_case, delim="|"))
 
     # Switch: ?{ expr $$ cases }
     switch_command = pp.Group(
@@ -814,10 +815,10 @@ def create_parser(
     return prompt
 
 
-# Cache of parsers, keyed by parser config. Since parser configs are immutable,
-# we can use them as keys; we still use a weak key dictionary to avoid leaking
-# memory if a custom parser config is garbage collected.
-_parser_cache: WeakKeyDictionary[ParserConfig, pp.ParserElement] = WeakKeyDictionary()
+# Cache of parsers, keyed by parser config value. ParserConfig is a frozen
+# dataclass, so __hash__/__eq__ are based on field values — two configs with
+# the same settings share the same cached parser.
+_parser_cache: dict[ParserConfig, pp.ParserElement] = {}
 
 
 def get_cached_parser(parser_config: ParserConfig):
@@ -833,15 +834,11 @@ def get_cached_parser(parser_config: ParserConfig):
         return parser
 
 
-def parse(
+@lru_cache(maxsize=512)
+def _parse_cached(
     prompt: str,
-    parser_config: ParserConfig = default_parser_config,
+    parser_config: ParserConfig,
 ) -> Command:
-    """
-    Parse a prompt string into a commands.
-    :param prompt: The prompt string to parse.
-    :return: A command representing the parsed prompt.
-    """
     if prompt.isalnum():  # no need to actually parse anything
         return LiteralCommand(prompt)
 
@@ -855,3 +852,15 @@ def parse(
     tok = tokens[0]
     assert isinstance(tok, Command)
     return tok
+
+
+def parse(
+    prompt: str,
+    parser_config: ParserConfig = default_parser_config,
+) -> Command:
+    """
+    Parse a prompt string into a command.
+    :param prompt: The prompt string to parse.
+    :return: A command representing the parsed prompt.
+    """
+    return _parse_cached(prompt, parser_config)

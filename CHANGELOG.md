@@ -1,3 +1,8 @@
+- 0.36.3
+  - Fix: Conditional operand (`cond_operand_literal`) now allows multi-word strings (e.g. `golden hour`) as comparison values; previously the parser truncated at the first space and could raise `ParseException` in nested conditionals.
+  - Performance: `parse()` now uses an `@lru_cache(maxsize=512)` on the internal `_parse_cached` helper, so repeated calls with the same template string and parser config are free.
+  - Performance: Replace deprecated `pp.delimited_list` with `pp.DelimitedList` in variants and switch-case grammar.
+  - Dev: Added `pytest-benchmark` to dev dependencies.
 - 0.36.2
   - Fix: `squash_commas` now normalizes any comma with inconsistent spacing (e.g. `a,b`) to `a, b`, not just runs of multiple commas.
   - Fix: `CommandCollection` dict index now uses `id(command)` to avoid `TypeError` on unhashable commands (e.g. `VariantCommand` with list fields).
