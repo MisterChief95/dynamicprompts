@@ -164,3 +164,29 @@ class TestBooleanBackwardCompatibility:
 
     def test_string_equality_still_works(self):
         assert _sample("${x=hello}?{${x} == hello $$ yes $$ no}") == "yes"
+
+
+# ---------------------------------------------------------------------------
+# Multi-word operands
+# ---------------------------------------------------------------------------
+
+class TestMultiWordOperand:
+    def test_multi_word_right_operand_match(self):
+        """Multi-word literal in right-hand operand of == is matched whole."""
+        result = _sample("${x=golden hour}?{${x} == golden hour $$ warm $$ cold}")
+        assert result == "warm"
+
+    def test_multi_word_operand_no_match(self):
+        """When variable does not equal multi-word value, else branch is taken."""
+        result = _sample("${x=rainy day}?{${x} == golden hour $$ warm $$ cold}")
+        assert result == "cold"
+
+    def test_multi_word_operand_nested_else_no_exception(self):
+        """Multi-word operand in nested else branch must not raise ParseException."""
+        template = (
+            "${lighting=!{dramatic|golden hour}}"
+            "?{${lighting} == dramatic $$ chiaroscuro $$"
+            "  ?{${lighting} == golden hour $$ warm rim light $$ other}}"
+        )
+        result = _sample(template)
+        assert result in ("chiaroscuro", "warm rim light", "other")
