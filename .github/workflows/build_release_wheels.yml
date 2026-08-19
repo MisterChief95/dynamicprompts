@@ -1,0 +1,66 @@
+name: Build and Release Wheels
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Allows you to run this manually if needed
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.22.0
+        env:
+          CIBW_BUILD: "cp3*-win_amd64 cp3*-manylinux_x86_64"
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  create_release:
+    name: Create GitHub Release
+    needs: [build_wheels]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Crucial permission needed to create a release and upload assets
+    
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cibw-wheels-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate Release Tag
+        id: tag
+        run: echo "release_tag=v$(date +'%Y.%m.%d.%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          name: Release ${{ steps.tag.outputs.release_tag }}
+          body: |
+            Automated wheel build for fork.
+            
+            **Merged Commit:** ${{ github.sha }}
+          draft: false
+          prerelease: false
+          files: dist/*.whl
