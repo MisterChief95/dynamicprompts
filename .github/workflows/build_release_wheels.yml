@@ -5,14 +5,17 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Don't let two pushes race to publish the same version tag.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build_wheels:
-    name: Build wheel for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # Still running on both to generate individual platform artifacts
-        os: [ubuntu-latest, windows-latest]
+  build_and_release:
+    name: Build wheel and publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -23,44 +26,46 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Build platform wheel
-        # Builds a standard wheel into the dist/ directory
+      - name: Build wheel
         run: uv build --wheel
 
-      - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.os }}
-          path: dist/*.whl
+      - name: Read version from built wheel
+        id: version
+        run: |
+          wheel=$(ls dist/*.whl)
+          version=$(basename "$wheel" | cut -d '-' -f 2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Built $wheel (version $version)"
 
-  create_release:
-    name: Create GitHub Release
-    needs: [build_wheels]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
-    steps:
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          pattern: wheels-*
-          merge-multiple: true
-          path: final_dist
-
-      - name: Generate Release Tag
-        id: tag
-        run: echo "release_tag=v$(date +'%Y.%m.%d.%H%M%S')" >> $GITHUB_OUTPUT
+      - name: Check whether this version is already released
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v${{ steps.version.outputs.version }} is already released. Bump __version__ in src/dynamicprompts/__init__.py to publish a new one."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create Release
+        if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          name: Release ${{ steps.tag.outputs.release_tag }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
           body: |
-            Automated pure Python 3.13 wheel build for fork.
-            
-            **Merged Commit:** ${{ github.sha }}
+            Pure-Python wheel build of the fork.
+
+            Install with:
+
+            ```
+            pip install "dynamicprompts[attentiongrabber,magicprompt] @ https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/dynamicprompts-${{ steps.version.outputs.version }}-py3-none-any.whl"
+            ```
+
+            **Commit:** ${{ github.sha }}
           draft: false
           prerelease: false
-          files: final_dist/*.whl
+          make_latest: true
+          files: dist/*.whl
