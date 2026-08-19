@@ -3,50 +3,50 @@ name: Build and Release Wheels
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Allows you to run this manually if needed
+  workflow_dispatch:
 
 jobs:
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build wheel for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        # Still running on both to generate individual platform artifacts
         os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.x'
+          python-version: '3.13'
 
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.22.0
-        env:
-          CIBW_BUILD: "cp3*-win_amd64 cp3*-manylinux_x86_64"
+      - name: Build platform wheel
+        # Builds a standard wheel into the dist/ directory
+        run: uv build --wheel
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cibw-wheels-${{ matrix.os }}
-          path: ./wheelhouse/*.whl
+          name: wheels-${{ matrix.os }}
+          path: dist/*.whl
 
   create_release:
     name: Create GitHub Release
     needs: [build_wheels]
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Crucial permission needed to create a release and upload assets
+      contents: write
     
     steps:
       - name: Download all wheels
         uses: actions/download-artifact@v4
         with:
-          pattern: cibw-wheels-*
+          pattern: wheels-*
           merge-multiple: true
-          path: dist
+          path: final_dist
 
       - name: Generate Release Tag
         id: tag
@@ -58,9 +58,9 @@ jobs:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           name: Release ${{ steps.tag.outputs.release_tag }}
           body: |
-            Automated wheel build for fork.
+            Automated pure Python 3.13 wheel build for fork.
             
             **Merged Commit:** ${{ github.sha }}
           draft: false
           prerelease: false
-          files: dist/*.whl
+          files: final_dist/*.whl

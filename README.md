@@ -3,12 +3,8 @@
 > **Note: This is a fork of [adieyal/dynamicprompts](https://github.com/adieyal/dynamicprompts)** developed to add new features (conditional logic, prefix/suffix on variant output, comma squashing, and variable assignments in branches). See [Recent Changes](#recent-changes) below.
 
 ![MIT](https://img.shields.io/github/license/adieyal/dynamicprompts)
-&nbsp;-&nbsp;
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/adieyal/dynamicprompts/test.yml)
-[![Codecov](https://img.shields.io/codecov/c/github/adieyal/dynamicprompts)](https://app.codecov.io/gh/adieyal/dynamicprompts)
-&nbsp;-&nbsp;
-[![PyPI](https://img.shields.io/pypi/v/dynamicprompts)](https://pypi.org/project/dynamicprompts) ![PyPI - Downloads](https://img.shields.io/pypi/dm/dynamicprompts)
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/dynamicprompts)
+&nbsp;
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/MisterChief95/dynamicprompts/build_release_wheels.yml)
 
 Dynamic prompts is a Python library that provides developers with a **flexible and intuitive templating language** and **tools** for generating prompts for text-to-image generators like Stable Diffusion, MidJourney or Dall-e 2. It lets you create and manage **sophisticated prompt generation workflows** that seamlessly integrate with your existing text-to-image generation pipelines.
 
