@@ -39,6 +39,7 @@ class VariantCommand(Command):
 
     def resolve_bounds(self, context: SamplingContext) -> tuple[int, int]:
         """Resolve min_bound and max_bound to ints, sampling variable commands if needed."""
+
         def _resolve(bound: int | Command) -> int:
             if isinstance(bound, int):
                 return bound
@@ -46,7 +47,9 @@ class VariantCommand(Command):
             try:
                 return int(text)
             except ValueError:
-                logger.warning(f"Variable bound resolved to non-integer {text!r}, defaulting to 1")
+                logger.warning(
+                    f"Variable bound resolved to non-integer {text!r}, defaulting to 1",
+                )
                 return 1
 
         min_b = _resolve(self.min_bound)
@@ -76,7 +79,9 @@ class VariantCommand(Command):
     def adjust_range(self, context: SamplingContext | None = None) -> VariantCommand:
         if isinstance(self.min_bound, Command) or isinstance(self.max_bound, Command):
             if context is None:
-                raise ValueError("context required to adjust_range when bounds are variable commands")
+                raise ValueError(
+                    "context required to adjust_range when bounds are variable commands",
+                )
             min_bound, max_bound = self.resolve_bounds(context)
         else:
             min_bound, max_bound = self.min_bound, self.max_bound

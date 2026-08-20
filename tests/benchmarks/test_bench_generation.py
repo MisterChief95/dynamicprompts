@@ -12,6 +12,7 @@ Run with:
     pytest tests/benchmarks/ --benchmark-only
     pytest tests/benchmarks/ --benchmark-only -v --benchmark-sort=mean
 """
+
 import pytest
 from dynamicprompts.generators import (
     CombinatorialPromptGenerator,
@@ -30,7 +31,6 @@ TEMPLATES = {
     "simple_literal": "a photo of a cat",
     "simple_single_variant": "a {red|blue|green} car",
     "simple_optional": "a [fluffy] cat",
-
     # --- medium ----------------------------------------------------------------
     "medium_nested_variant": "a {red|{dark|light} blue|green} {sports|family} car",
     "medium_multi_pick": "a {2$$red|blue|green|yellow|purple}",
@@ -39,7 +39,6 @@ TEMPLATES = {
         "of a {young|old} {woman|man|child} in {Paris|Tokyo|New York}"
     ),
     "medium_weighted": "a {2::red|1::blue|3::green} car",
-
     # --- complex ---------------------------------------------------------------
     "complex_deeply_nested": (
         "{a {very|extremely} {beautiful|stunning}|an {average|ordinary}} "
@@ -72,12 +71,10 @@ TEMPLATES = {
         "{day|night|golden hour} lighting, "
         "{photorealistic|anime|oil painting|watercolor} style"
     ),
-
     # --- wildcards -------------------------------------------------------------
     "wildcard_simple": "__colors-warm__",
     "wildcard_in_template": "a __colors-warm__ car with __colors-cold__ trim",
     "wildcard_nested_in_variant": "a {__colors-warm__|__colors-cold__} background",
-
     # --- parser stress ---------------------------------------------------------
     "parser_many_options": "|".join(f"option{i}" for i in range(50)).join("{}"),
     "parser_deep_nesting": "{a|{b|{c|{d|{e|{f|{g|h}}}}}}}",
@@ -88,23 +85,36 @@ TEMPLATES = {
 # Parser benchmarks
 # ---------------------------------------------------------------------------
 
+
 class TestParserBenchmarks:
     """Benchmark the parser in isolation (parse string → Command tree)."""
 
     @pytest.mark.parametrize("name,template", list(TEMPLATES.items()))
     def test_parse(self, benchmark, name, template):
-        benchmark.pedantic(parse, args=(template,), setup=_parse_cached.cache_clear, rounds=50)
+        benchmark.pedantic(
+            parse,
+            args=(template,),
+            setup=_parse_cached.cache_clear,
+            rounds=50,
+        )
 
 
 # ---------------------------------------------------------------------------
 # Random sampler benchmarks — single prompt
 # ---------------------------------------------------------------------------
 
+
 class TestRandomSamplerSingle:
     """Benchmark random sampling, 1 prompt per call."""
 
     @pytest.mark.parametrize("name,template", list(TEMPLATES.items()))
-    def test_random_single(self, benchmark, random_context: SamplingContext, name, template):
+    def test_random_single(
+        self,
+        benchmark,
+        random_context: SamplingContext,
+        name,
+        template,
+    ):
         def _run():
             return list(random_context.sample_prompts(template, 1))
 
@@ -116,6 +126,7 @@ class TestRandomSamplerSingle:
 # ---------------------------------------------------------------------------
 
 BULK_SIZES = [10, 100]
+
 
 class TestRandomSamplerBulk:
     """Benchmark generating N prompts from representative templates."""
@@ -130,7 +141,12 @@ class TestRandomSamplerBulk:
     @pytest.mark.parametrize("n", BULK_SIZES)
     @pytest.mark.parametrize("name,template", list(BULK_TEMPLATES.items()))
     def test_random_bulk(
-        self, benchmark, random_context: SamplingContext, name, template, n
+        self,
+        benchmark,
+        random_context: SamplingContext,
+        name,
+        template,
+        n,
     ):
         def _run():
             return list(random_context.sample_prompts(template, n))
@@ -142,6 +158,7 @@ class TestRandomSamplerBulk:
 # Cyclical sampler benchmarks
 # ---------------------------------------------------------------------------
 
+
 class TestCyclicalSampler:
     TEMPLATES_SUBSET = {
         "simple_single_variant": TEMPLATES["simple_single_variant"],
@@ -151,7 +168,11 @@ class TestCyclicalSampler:
 
     @pytest.mark.parametrize("name,template", list(TEMPLATES_SUBSET.items()))
     def test_cyclical_single(
-        self, benchmark, cyclical_context: SamplingContext, name, template
+        self,
+        benchmark,
+        cyclical_context: SamplingContext,
+        name,
+        template,
     ):
         def _run():
             return list(cyclical_context.sample_prompts(template, 1))
@@ -162,6 +183,7 @@ class TestCyclicalSampler:
 # ---------------------------------------------------------------------------
 # Combinatorial sampler benchmarks
 # ---------------------------------------------------------------------------
+
 
 class TestCombinatorialSampler:
     """Combinatorial expands all combinations — keep templates small."""
@@ -176,7 +198,11 @@ class TestCombinatorialSampler:
 
     @pytest.mark.parametrize("name,template", list(COMBINATORIAL_TEMPLATES.items()))
     def test_combinatorial(
-        self, benchmark, combinatorial_context: SamplingContext, name, template
+        self,
+        benchmark,
+        combinatorial_context: SamplingContext,
+        name,
+        template,
     ):
         def _run():
             # limit to 50 so combinatorial explosion doesn't dominate timing
@@ -188,6 +214,7 @@ class TestCombinatorialSampler:
 # ---------------------------------------------------------------------------
 # RandomPromptGenerator (public API) benchmarks
 # ---------------------------------------------------------------------------
+
 
 class TestRandomPromptGenerator:
     """Benchmark via the high-level generator API used by end users."""
@@ -206,11 +233,23 @@ class TestRandomPromptGenerator:
     }
 
     @pytest.mark.parametrize("name,template", list(GENERATOR_TEMPLATES.items()))
-    def test_generate_single(self, benchmark, generator: RandomPromptGenerator, name, template):
+    def test_generate_single(
+        self,
+        benchmark,
+        generator: RandomPromptGenerator,
+        name,
+        template,
+    ):
         benchmark(generator.generate, template, 1)
 
     @pytest.mark.parametrize("name,template", list(GENERATOR_TEMPLATES.items()))
-    def test_generate_10(self, benchmark, generator: RandomPromptGenerator, name, template):
+    def test_generate_10(
+        self,
+        benchmark,
+        generator: RandomPromptGenerator,
+        name,
+        template,
+    ):
         benchmark(generator.generate, template, 10)
 
 
@@ -218,11 +257,15 @@ class TestRandomPromptGenerator:
 # CombinatorialPromptGenerator (public API) benchmarks
 # ---------------------------------------------------------------------------
 
+
 class TestCombinatorialPromptGenerator:
     """Benchmark combinatorial generator via the high-level API."""
 
     @pytest.fixture(scope="class")
-    def generator(self, wildcard_manager: WildcardManager) -> CombinatorialPromptGenerator:
+    def generator(
+        self,
+        wildcard_manager: WildcardManager,
+    ) -> CombinatorialPromptGenerator:
         return CombinatorialPromptGenerator(wildcard_manager=wildcard_manager)
 
     GENERATOR_TEMPLATES = {
@@ -233,7 +276,11 @@ class TestCombinatorialPromptGenerator:
 
     @pytest.mark.parametrize("name,template", list(GENERATOR_TEMPLATES.items()))
     def test_generate(
-        self, benchmark, generator: CombinatorialPromptGenerator, name, template
+        self,
+        benchmark,
+        generator: CombinatorialPromptGenerator,
+        name,
+        template,
     ):
         benchmark(generator.generate, template)
 
@@ -259,6 +306,7 @@ class TestCombinatorialPromptGenerator:
 # Each HELL_TEMPLATE variant is a standalone template string (triple-quoted for readability).
 # The parser ignores Python-style comments and insignificant whitespace/newlines.
 # They are ordered from least to most expensive so the table reads top-to-bottom.
+
 
 def _strip(s: str) -> str:
     """Remove leading/trailing whitespace from each line and join.
@@ -422,18 +470,39 @@ class TestHellBenchmarks:
     @pytest.mark.parametrize("name,template", list(HELL_TEMPLATES.items()))
     def test_hell_parse(self, benchmark, name, template):
         """Parser cost in isolation (cache cleared before each round)."""
-        benchmark.pedantic(parse, args=(template,), setup=_parse_cached.cache_clear, rounds=50)
+        benchmark.pedantic(
+            parse,
+            args=(template,),
+            setup=_parse_cached.cache_clear,
+            rounds=50,
+        )
 
     @pytest.mark.parametrize("name,template", list(HELL_TEMPLATES.items()))
-    def test_hell_random_single(self, benchmark, random_context: SamplingContext, name, template):
+    def test_hell_random_single(
+        self,
+        benchmark,
+        random_context: SamplingContext,
+        name,
+        template,
+    ):
         """Single-prompt random generation."""
+
         def _run():
             return list(random_context.sample_prompts(template, 1))
+
         benchmark(_run)
 
     @pytest.mark.parametrize("name,template", list(HELL_TEMPLATES.items()))
-    def test_hell_random_10(self, benchmark, random_context: SamplingContext, name, template):
+    def test_hell_random_10(
+        self,
+        benchmark,
+        random_context: SamplingContext,
+        name,
+        template,
+    ):
         """10-prompt batch — shows per-prompt scaling."""
+
         def _run():
             return list(random_context.sample_prompts(template, 10))
+
         benchmark(_run)

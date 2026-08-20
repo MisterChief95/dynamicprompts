@@ -10,6 +10,7 @@ Compare runs (save then compare):
     pytest tests/benchmarks/ --benchmark-save=baseline
     pytest tests/benchmarks/ --benchmark-compare=baseline
 """
+
 from pathlib import Path
 
 import pytest

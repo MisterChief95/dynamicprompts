@@ -99,8 +99,8 @@ def _configure_range(parser_config: ParserConfig | None = None) -> pp.ParserElem
     ).leave_whitespace()
 
     # Variable bound: ${varname} — parsed as a VariableAccessCommand at sample time
-    _var_start = (parser_config.variable_start if parser_config else "${")
-    _var_end = (parser_config.variable_end if parser_config else "}")
+    _var_start = parser_config.variable_start if parser_config else "${"
+    _var_end = parser_config.variable_end if parser_config else "}"
     variable_bound = pp.Group(
         pp.Suppress(pp.Literal(_var_start))
         + var_name("name")
@@ -534,7 +534,7 @@ def _configure_conditional(
 ) -> pp.ParserElement:
     cond_start = pp.Suppress(
         pp.Literal(parser_config.conditional_start)
-        | pp.Literal(parser_config.conditional_alt_start)
+        | pp.Literal(parser_config.conditional_alt_start),
     )
     cond_end = pp.Suppress(parser_config.conditional_end)
 
@@ -549,7 +549,7 @@ def _configure_conditional(
         prompt=prompt,
     )
     variable_access_inner.set_parse_action(_parse_variable_access_command)
-    cond_operand = (variable_access_inner | cond_operand_literal)
+    cond_operand = variable_access_inner | cond_operand_literal
 
     # Comparison operators (order matters: >= before >, etc.)
     cmp_op = pp.one_of("== != >= <= > <")("operator")
@@ -592,7 +592,7 @@ def _configure_conditional(
     )
 
     # Switch expression: the value to match against (variable access or literal)
-    switch_expr = (variable_access_inner | cond_operand_literal)
+    switch_expr = variable_access_inner | cond_operand_literal
 
     # Switch case label: text before ":" or "&:"
     case_label = pp.Regex(r"[^:&|}{]+?(?=&?:)")("label").leave_whitespace()
@@ -666,7 +666,9 @@ def _extract_command(val) -> Command:
     raise ValueError(f"Cannot extract Command from {val!r}")
 
 
-def _parse_conditional_command(parse_result: pp.ParseResults) -> IfCommand | SwitchCommand:
+def _parse_conditional_command(
+    parse_result: pp.ParseResults,
+) -> IfCommand | SwitchCommand:
     result_name = parse_result.get_name()
     parts = parse_result[0]
 
@@ -674,9 +676,15 @@ def _parse_conditional_command(parse_result: pp.ParseResults) -> IfCommand | Swi
         left = _extract_command(parts["left"])
         right = _extract_command(parts["right"]) if "right" in parts else None
         if_value = _extract_command(parts["if_value"])
-        else_value = _extract_command(parts["else_value"]) if "else_value" in parts else None
+        else_value = (
+            _extract_command(parts["else_value"]) if "else_value" in parts else None
+        )
         if result_name == "bool_if_command":
-            operator = "!bool" if "bool_negation" in parts and parts["bool_negation"] else "bool"
+            operator = (
+                "!bool"
+                if "bool_negation" in parts and parts["bool_negation"]
+                else "bool"
+            )
         else:
             operator = parts["operator"]
         condition = Condition(

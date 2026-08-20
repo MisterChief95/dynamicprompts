@@ -2,16 +2,17 @@
 Tests for variable assignment inside variant branches, if/else branches, and
 switch cases, e.g.: `{cat ${col=orange}|dog ${col=brown}}, ${col} fur`
 """
+
 from __future__ import annotations
 
 from dynamicprompts.enums import SamplingMethod
 from dynamicprompts.sampling_context import SamplingContext
 from dynamicprompts.wildcards import WildcardManager
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _ctx(wildcard_manager: WildcardManager, method: SamplingMethod) -> SamplingContext:
     return SamplingContext(
@@ -29,10 +30,15 @@ def _sample_all(ctx: SamplingContext, prompt: str, n: int = 20) -> list[str]:
 # Variant branch variable assignment
 # ---------------------------------------------------------------------------
 
+
 class TestVariantBranchAssignment:
     def test_variable_follows_chosen_branch_random(self, wildcard_manager):
         ctx = _ctx(wildcard_manager, SamplingMethod.RANDOM)
-        results = _sample_all(ctx, "{cat ${col=orange}|dog ${col=brown}}, ${col} fur", 40)
+        results = _sample_all(
+            ctx,
+            "{cat ${col=orange}|dog ${col=brown}}, ${col} fur",
+            40,
+        )
         for r in results:
             if "cat" in r:
                 assert "orange fur" in r, r
@@ -42,7 +48,11 @@ class TestVariantBranchAssignment:
 
     def test_variable_follows_chosen_branch_cyclical(self, wildcard_manager):
         ctx = _ctx(wildcard_manager, SamplingMethod.CYCLICAL)
-        results = _sample_all(ctx, "{cat ${col=orange}|dog ${col=brown}}, ${col} fur", 4)
+        results = _sample_all(
+            ctx,
+            "{cat ${col=orange}|dog ${col=brown}}, ${col} fur",
+            4,
+        )
         for r in results:
             if "cat" in r:
                 assert "orange fur" in r, r
@@ -68,15 +78,24 @@ class TestVariantBranchAssignment:
         ctx = _ctx(wildcard_manager, SamplingMethod.COMBINATORIAL)
         # Top-level col=green, but the branch always sets it to red or blue.
         results = _sample_all(
-            ctx, "${col=green}{${col=red}|${col=blue}}, ${col} sky"
+            ctx,
+            "${col=green}{${col=red}|${col=blue}}, ${col} sky",
         )
         assert sorted(results) == sorted([", red sky", ", blue sky"])
 
     def test_no_cross_contamination_between_samples(self, wildcard_manager):
         """Variables set in one sample must not leak into the next sample."""
         ctx = _ctx(wildcard_manager, SamplingMethod.RANDOM)
-        r1 = str(next(ctx.sample_prompts("{cat ${col=orange}|dog ${col=brown}}, ${col} coat")))
-        r2 = str(next(ctx.sample_prompts("{cat ${col=orange}|dog ${col=brown}}, ${col} coat")))
+        r1 = str(
+            next(
+                ctx.sample_prompts("{cat ${col=orange}|dog ${col=brown}}, ${col} coat"),
+            ),
+        )
+        r2 = str(
+            next(
+                ctx.sample_prompts("{cat ${col=orange}|dog ${col=brown}}, ${col} coat"),
+            ),
+        )
         for r in [r1, r2]:
             if "cat" in r:
                 assert "orange coat" in r
@@ -87,6 +106,7 @@ class TestVariantBranchAssignment:
 # ---------------------------------------------------------------------------
 # If/else branch variable assignment
 # ---------------------------------------------------------------------------
+
 
 class TestIfBranchAssignment:
     def test_if_branch_sets_variable(self, wildcard_manager):
@@ -107,6 +127,7 @@ class TestIfBranchAssignment:
 # ---------------------------------------------------------------------------
 # Assignment-only variant (no surrounding text)
 # ---------------------------------------------------------------------------
+
 
 class TestAssignmentOnlyVariant:
     def test_pure_assignment_in_variant_combinatorial(self, wildcard_manager):

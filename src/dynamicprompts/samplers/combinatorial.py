@@ -101,7 +101,11 @@ class CombinatorialSampler(Sampler):
                     gen = ctx.generator_from_command(first_command)
                     for first_val in gen:
                         # Apply variables produced by this token before processing the rest.
-                        next_ctx = ctx.with_variables(dict(first_val.variables)) if first_val.variables else ctx
+                        next_ctx = (
+                            ctx.with_variables(dict(first_val.variables))
+                            if first_val.variables
+                            else ctx
+                        )
                         for rest_vals in get_sequence(rest, next_ctx):
                             yield [first_val] + rest_vals
 

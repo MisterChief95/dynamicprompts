@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import random
+import re
 from itertools import cycle
 from typing import Any, Iterable, TypeVar
 

@@ -244,7 +244,10 @@ class TestPrompts:
 
         if isinstance(sampler, RandomSampler):
             shapes = [v.rsplit(" ", 1)[-1] for v in expected]
-            colour_pairs = [v[len("A "):-(len(s) + 1)].split(", ") for v, s in zip(expected, shapes)]
+            colour_pairs = [
+                v[len("A ") : -(len(s) + 1)].split(", ")
+                for v, s in zip(expected, shapes)
+            ]
 
             random_choices = []
 
@@ -306,7 +309,9 @@ class TestPrompts:
         template = "A {1-2$$red|green|blue} square"
 
         if isinstance(sampler, RandomSampler):
-            colour_pairs = [v[len("A "):-len(" square")].split(", ") for v in expected]
+            colour_pairs = [
+                v[len("A ") : -len(" square")].split(", ") for v in expected
+            ]
             random_choices = [
                 [LiteralCommand(p) for p in pair] for pair in colour_pairs
             ]

@@ -15,7 +15,9 @@ class CommandCollection:
 
     def __init__(self, commands: Iterable[Command], context: SamplingContext) -> None:
         self._commands = list(commands)
-        self._command_index: dict[int, int] = {id(c): i for i, c in enumerate(self._commands)}
+        self._command_index: dict[int, int] = {
+            id(c): i for i, c in enumerate(self._commands)
+        }
         self._generators = [context.generator_from_command(c) for c in self._commands]
         self._values: list[SamplingResult | None] = [next(g) for g in self._generators]
 

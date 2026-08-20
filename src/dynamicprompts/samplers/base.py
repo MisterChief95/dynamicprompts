@@ -21,7 +21,6 @@ from dynamicprompts.commands.variable_commands import (
 from dynamicprompts.sampling_context import SamplingContext
 from dynamicprompts.sampling_result import SamplingResult
 from dynamicprompts.types import ResultGen
-from dynamicprompts.utils import rotate_and_join
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +106,7 @@ class Sampler:
                     # generator with the updated context rather than advancing
                     # the persistent generator (which has the old context).
                     result = next(
-                        current_context.generator_from_command(tokens[i])
+                        current_context.generator_from_command(tokens[i]),
                     )
                 else:
                     result = next(gen)
