@@ -47,3 +47,17 @@ def cyclical_context(wildcard_manager: WildcardManager) -> SamplingContext:
         wildcard_manager=wildcard_manager,
         default_sampling_method=SamplingMethod.CYCLICAL,
     )
+
+
+def pytest_benchmark_update_machine_info(config, machine_info):
+    """Strip host-identifying fields from saved benchmark results.
+
+    pytest-benchmark embeds the hostname and full CPU/OS fingerprint in every
+    ``--benchmark-json`` / ``--benchmark-save`` payload. Keep the fields that
+    make results comparable, drop the ones that identify the machine.
+    """
+    machine_info["node"] = "anonymous"
+    cpu = machine_info.get("cpu")
+    if cpu:
+        for key in ("brand_raw", "hardware_raw", "vendor_id_raw", "serial"):
+            cpu.pop(key, None)
