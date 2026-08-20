@@ -2,7 +2,7 @@ name: Build and Release Wheels
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 # Don't let two pushes race to publish the same version tag.
@@ -24,7 +24,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: Build wheel
         run: uv build --wheel

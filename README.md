@@ -469,15 +469,18 @@ generator = RandomPromptGenerator(parser_config=parser_config)
 This fork extends the upstream library with the following additions (v0.32.0–v0.33.1):
 
 **v0.33.1**
+
 - Fix: Variable assignments inside switch cases now correctly bubble up to the outer sequence.
 - Fix: Variable lookup is deferred until generator iteration, preventing `KeyError` for variables not yet assigned.
 - Fix: Switch case parser now tolerates leading/trailing commas and whitespace at case boundaries.
 
 **v0.33.0**
+
 - Variable assignments are now allowed inside variant branches, if/else branches, and switch cases. Variables assigned in the chosen branch are visible to subsequent tokens in the same sequence (e.g. `{cat ${col=orange}|dog ${col=brown}}, ${col} fur`).
 - Combinatorial sampler correctly distinguishes branches that produce identical text but assign different variables.
 
 **v0.32.0**
+
 - Repeated commas produced by empty sampling results are automatically squashed.
 - Prefix and suffix parameters (`p=`, `s=`) on variant output allow wrapping selected values (e.g. for Stable Diffusion prompt scheduling syntax).
 - Conditional if/else and switch/case logic for variable-driven prompt branching.

@@ -513,16 +513,16 @@ portrait, ?{${style} == cinematic $$ dramatic lighting, lens flare $$ soft studi
 
 ### Comparison Operators
 
-| Operator | Type | Description |
-|---|---|---|
-| `==` | String | Equality |
-| `!=` | String | Inequality |
-| `>` | Numeric | Greater than — casts both sides to `float`, raises `ValueError` if non-numeric |
-| `<` | Numeric | Less than |
-| `>=` | Numeric | Greater or equal |
-| `<=` | Numeric | Less or equal |
-| `empty` | Unary | True if variable resolves to empty string |
-| `!empty` | Unary | True if variable resolves to non-empty string |
+| Operator | Type    | Description                                                                    |
+| -------- | ------- | ------------------------------------------------------------------------------ |
+| `==`     | String  | Equality                                                                       |
+| `!=`     | String  | Inequality                                                                     |
+| `>`      | Numeric | Greater than — casts both sides to `float`, raises `ValueError` if non-numeric |
+| `<`      | Numeric | Less than                                                                      |
+| `>=`     | Numeric | Greater or equal                                                               |
+| `<=`     | Numeric | Less or equal                                                                  |
+| `empty`  | Unary   | True if variable resolves to empty string                                      |
+| `!empty` | Unary   | True if variable resolves to non-empty string                                  |
 
 ### Switch/Case
 
