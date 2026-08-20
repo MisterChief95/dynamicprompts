@@ -17,8 +17,9 @@ A parser for a prompt grammar which is roughly as follows:
 <wildcard> ::= <wildcard_enclosure> <sampling_method> <path> <wildcard_enclosure>
 <wildcard_enclosure> ::= "__" # Can be configured to an arbitrary string
 <path>::=  ~"__" + [^{}#]+"
-<literal>:=[^#<variant_start>]+
-<variant_literal>:=[^#$|<variant_start><variant_end>]+
+<literal>:=[^#<variant_start>]+ | <bracket_block>
+<variant_literal>:=[^#$|<variant_start><variant_end>]+ | <bracket_block>
+<bracket_block>:="[" [^]]* "]"    # SD WebUI scheduling passthrough; | inside is not a separator
 <literal_sequence> ::= <literal>+
 <variant_literal_sequence> ::= <variant_literal>+
 <variable_assignment> ::= "${" <variable_name> "=" <variant_chunk> "}"
@@ -31,17 +32,20 @@ Note that whitespace is preserved in case it is significant to the user.
 from __future__ import annotations
 
 import re
-from functools import partial
+from functools import lru_cache, partial
 from typing import Iterable
-from weakref import WeakKeyDictionary
 
 import pyparsing as pp
 
 from dynamicprompts.commands import (
     Command,
+    Condition,
+    IfCommand,
     LiteralCommand,
     SamplingMethod,
     SequenceCommand,
+    SwitchCase,
+    SwitchCommand,
     VariantCommand,
     VariantOption,
     WildcardCommand,
@@ -67,6 +71,10 @@ sampler_symbol = sampler_random | sampler_combinatorial | sampler_cyclical
 variant_delim = pp.Suppress("$$")
 
 OPT_WS = pp.Opt(pp.White())  # Optional whitespace
+# Suppresses optional whitespace and/or commas — used at switch/if case
+# boundaries so that formatters that add commas after newlines don't break
+# the conditional syntax.
+OPT_WS_COMMA = pp.Suppress(pp.Opt(pp.Regex(r"[\s,]+")))
 
 var_name = pp.Word(pp.alphas + "_-", pp.alphanums + "_-")
 
@@ -77,7 +85,7 @@ sampler_symbol_to_method = {
 }
 
 
-def _configure_range() -> pp.ParserElement:
+def _configure_range(parser_config: ParserConfig | None = None) -> pp.ParserElement:
     hyphen = pp.Suppress("-")
 
     # Exclude:
@@ -85,23 +93,45 @@ def _configure_range() -> pp.ParserElement:
     # - }, which is used to indicate the end of a variant
     # Allowed:
     # - | is allowed as a separator
-    separator = pp.Word(pp.printables + " ", exclude_chars="${}")(
+    # Also stop before p= or s= prefix/suffix markers
+    separator = pp.Regex(r"(?!p=|s=)[^${}]+")(
         "separator",
     ).leave_whitespace()
 
-    bound = pp.common.integer
-    bound_range1 = bound("exact")
-    bound_range2 = bound("lower") + hyphen
-    bound_range3 = hyphen + bound("upper")
-    bound_range4 = bound("lower") + hyphen + bound("upper")
+    # Variable bound: ${varname} — parsed as a VariableAccessCommand at sample time
+    _var_start = parser_config.variable_start if parser_config else "${"
+    _var_end = parser_config.variable_end if parser_config else "}"
+    variable_bound = pp.Group(
+        pp.Suppress(pp.Literal(_var_start))
+        + var_name("name")
+        + pp.Suppress(pp.Literal(_var_end)),
+    )("var_bound").leave_whitespace()
+
+    int_bound = pp.common.integer
+    # Each side of a range can be an integer or a variable reference
+    single_bound = variable_bound | int_bound
+    bound_range1 = single_bound("exact")
+    bound_range2 = single_bound("lower") + hyphen
+    bound_range3 = hyphen + single_bound("upper")
+    bound_range4 = single_bound("lower") + hyphen + single_bound("upper")
 
     bound_range = pp.Group(
         bound_range4 | bound_range3 | bound_range2 | bound_range1,
     )
+    # Prefix: p=VALUE$$
+    prefix_value = pp.Regex(r"[^$}]*")("prefix_text").leave_whitespace()
+    prefix_expr = pp.Suppress(pp.Literal("p=")) + prefix_value + variant_delim
+
+    # Suffix: s=VALUE$$
+    suffix_value = pp.Regex(r"[^$}]*")("suffix_text").leave_whitespace()
+    suffix_expr = pp.Suppress(pp.Literal("s=")) + suffix_value + variant_delim
+
     bound_expr = pp.Group(
         bound_range("range")
         + variant_delim
-        + pp.Opt(separator + variant_delim, default=",")("separator"),
+        + pp.Opt(separator + variant_delim, default=",")("separator")
+        + pp.Opt(prefix_expr)("prefix")
+        + pp.Opt(suffix_expr)("suffix"),
     )
 
     return bound_expr
@@ -172,12 +202,29 @@ def _configure_literal_sequence(
         non_literal_chars += r")("
 
     non_literal_chars = re.escape(non_literal_chars)
+
+    # Build negative lookaheads for multi-char start sequences (conditionals)
+    # so we don't ban their individual characters from literals
+    lookaheads = (
+        rf"(?!{re.escape(parser_config.wildcard_wrap)})"
+        rf"(?!{re.escape(parser_config.conditional_start)})"
+        rf"(?!{re.escape(parser_config.conditional_alt_start)})"
+    )
     literal = pp.Regex(
-        rf"((?!{re.escape(parser_config.wildcard_wrap)})[^{non_literal_chars}])+",
+        rf"({lookaheads}[^{non_literal_chars}])+",
     )(
         "literal",
     ).leave_whitespace()
-    literal_sequence = pp.OneOrMore(literal)
+
+    # SD WebUI prompt scheduling uses [a|b] syntax. Treat [...] as an opaque
+    # bracket block so that | inside square brackets is not consumed as a
+    # variant/switch-case separator. Only add this when [ is not already
+    # configured as the variant_start, to avoid conflict with custom brace configs.
+    if parser_config.variant_start != "[":
+        bracket_block = pp.Regex(r"\[[^\]]*\]")("literal").leave_whitespace()
+        literal_sequence = pp.OneOrMore(bracket_block | literal)
+    else:
+        literal_sequence = pp.OneOrMore(literal)
 
     return literal_sequence
 
@@ -202,7 +249,7 @@ def _configure_variants(
     variant = pp.Group(
         OPT_WS + pp.Opt(weight, default=1)("weight") + prompt()("val") + OPT_WS,
     )
-    variants_list = pp.Group(pp.delimited_list(variant, delim="|"))
+    variants_list = pp.Group(pp.DelimitedList(variant, delim="|"))
 
     variants = pp.Group(
         variant_start
@@ -238,6 +285,7 @@ def _configure_variable_assignment(
     parser_config: ParserConfig,
     prompt: pp.ParserElement,
 ) -> pp.ParserElement:
+    bool_keyword = pp.Keyword("bool")("bool_keyword")
     variable_assignment = pp.Group(
         pp.Suppress(parser_config.variable_start)
         + OPT_WS
@@ -247,7 +295,7 @@ def _configure_variable_assignment(
         + pp.Literal("=")
         + pp.Opt(pp.Literal("!"))("immediate")
         + OPT_WS
-        + prompt()("value")
+        + (bool_keyword | prompt()("value"))
         + OPT_WS
         + pp.Suppress(parser_config.variable_end),
     )
@@ -296,18 +344,22 @@ def _parse_variant_command(parse_result: pp.ParseResults) -> VariantCommand:
         for v in parts["variants"]
     ]
     if "bound_expr" in parts:
-        min_bound, max_bound, separator = _parse_bound_expr(
+        min_bound, max_bound, separator, prefix, suffix = _parse_bound_expr(
             parts["bound_expr"],
             max_options=len(variants),
         )
     else:
         min_bound = max_bound = 1
         separator = ","
+        prefix = ""
+        suffix = ""
     return VariantCommand(
         variants,
         min_bound=min_bound,
         max_bound=max_bound,
         separator=separator,
+        prefix=prefix,
+        suffix=suffix,
         sampling_method=sampling_method,
     )
 
@@ -377,20 +429,42 @@ def _parse_bound_expr(expr, max_options):
 
     expr = expr[0]
 
+    def _as_bound(val) -> int | VariableAccessCommand:
+        """Convert a parsed bound value to int or VariableAccessCommand."""
+        # Unwrap list/ParseResults layers until we hit an int or a variable name
+        while isinstance(val, (list, pp.ParseResults)):
+            if isinstance(val, pp.ParseResults) and "name" in val:
+                return VariableAccessCommand(name=val["name"])
+            if isinstance(val, dict):
+                return VariableAccessCommand(name=val["name"])
+            if len(val) == 0:
+                break
+            val = val[0]
+        if isinstance(val, dict):
+            return VariableAccessCommand(name=val["name"])
+        return int(val)
+
     if "range" in expr:
         rng = expr["range"]
         if "exact" in rng:
-            lbound = ubound = rng["exact"]
+            lbound = ubound = _as_bound(rng["exact"])
         else:
             if "lower" in expr["range"]:
-                lbound = int(expr["range"]["lower"])
+                lbound = _as_bound(expr["range"]["lower"])
             if "upper" in expr["range"]:
-                ubound = int(expr["range"]["upper"])
+                ubound = _as_bound(expr["range"]["upper"])
 
     if "separator" in expr:
         separator = expr["separator"][0]
 
-    return lbound, ubound, separator
+    prefix = ""
+    suffix = ""
+    if "prefix_text" in expr:
+        prefix = expr["prefix_text"]
+    if "suffix_text" in expr:
+        suffix = expr["suffix_text"]
+
+    return lbound, ubound, separator, prefix, suffix
 
 
 def _parse_variable_access_command(
@@ -416,11 +490,24 @@ def _parse_variable_assignment_command(
     parse_result: pp.ParseResults,
 ) -> VariableAssignmentCommand:
     parts = parse_result[0].as_dict()
+    # bool_keyword: ${x=bool} → random per generation; ${x=!bool} → sampled once (immediate)
+    is_boolean = "bool_keyword" in parts
+    if is_boolean:
+        value: Command = VariantCommand(
+            variants=[
+                VariantOption(LiteralCommand("true")),
+                VariantOption(LiteralCommand("false")),
+            ],
+            sampling_method=SamplingMethod.RANDOM,
+        )
+    else:
+        value = parts.get("value", LiteralCommand(""))
     return VariableAssignmentCommand(
         name=parts["name"],
-        value=parts["value"],
+        value=value,
         overwrite=("preserve_existing_value" not in parts),
-        immediate=("immediate" in parts),
+        immediate="immediate" in parts,
+        is_boolean=is_boolean,
     )
 
 
@@ -434,11 +521,207 @@ def _parse_wrap_command(
     )
 
 
+# --- Conditional parsing ---
+
+_COMPARISON_OPS = ("==", "!=", ">=", "<=", ">", "<")
+_NUMERIC_OPS = (">", "<", ">=", "<=")
+_UNARY_OPS = ("empty", "!empty")
+
+
+def _configure_conditional(
+    parser_config: ParserConfig,
+    prompt: pp.ParserElement,
+) -> pp.ParserElement:
+    cond_start = pp.Suppress(
+        pp.Literal(parser_config.conditional_start)
+        | pp.Literal(parser_config.conditional_alt_start),
+    )
+    cond_end = pp.Suppress(parser_config.conditional_end)
+
+    # Condition operand: matches literal text up to comparison operators, $$, }, or |.
+    # Allows internal whitespace so "golden hour" is matched as one token.
+    # The negative lookahead on $$ prevents consuming the branch separator;
+    # .strip() on the parse action trims any trailing space before $$.
+    cond_operand_literal = pp.Regex(r"(?:(?!\$\$)[^=!<>$}|])+").leave_whitespace()
+    cond_operand_literal.set_parse_action(lambda t: LiteralCommand(t[0].strip()))
+    variable_access_inner = _configure_variable_access(
+        parser_config=parser_config,
+        prompt=prompt,
+    )
+    variable_access_inner.set_parse_action(_parse_variable_access_command)
+    cond_operand = variable_access_inner | cond_operand_literal
+
+    # Comparison operators (order matters: >= before >, etc.)
+    cmp_op = pp.one_of("== != >= <= > <")("operator")
+
+    # Unary operators
+    unary_op = (pp.Literal("!empty") | pp.Literal("empty"))("operator")
+
+    # If/else: ?{ expr op expr $$ then ($$ else)? }
+    if_command = pp.Group(
+        cond_start
+        + OPT_WS
+        + cond_operand("left")
+        + OPT_WS
+        + cmp_op
+        + OPT_WS
+        + cond_operand("right")
+        + OPT_WS
+        + variant_delim
+        + OPT_WS
+        + prompt()("if_value")
+        + pp.Opt(variant_delim + OPT_WS + prompt()("else_value"))
+        + OPT_WS
+        + cond_end,
+    )
+
+    # Unary if: ?{ expr empty $$ then ($$ else)? }
+    unary_if_command = pp.Group(
+        cond_start
+        + OPT_WS
+        + cond_operand("left")
+        + OPT_WS
+        + unary_op
+        + OPT_WS
+        + variant_delim
+        + OPT_WS
+        + prompt()("if_value")
+        + pp.Opt(variant_delim + OPT_WS + prompt()("else_value"))
+        + OPT_WS
+        + cond_end,
+    )
+
+    # Switch expression: the value to match against (variable access or literal)
+    switch_expr = variable_access_inner | cond_operand_literal
+
+    # Switch case label: text before ":" or "&:"
+    case_label = pp.Regex(r"[^:&|}{]+?(?=&?:)")("label").leave_whitespace()
+    case_fall = pp.Opt(pp.Literal("&"))("fall_through")
+
+    # Single switch case: label(&)?: prompt
+    # OPT_WS_COMMA at the boundaries strips whitespace and/or commas that
+    # formatters may insert after newlines, so users can write readable
+    # multi-line switch blocks without breaking the parser.
+    switch_case = pp.Group(
+        OPT_WS_COMMA
+        + case_label
+        + case_fall
+        + pp.Suppress(":")
+        + OPT_WS_COMMA
+        + prompt()("case_value")
+        + OPT_WS_COMMA,
+    )
+    switch_cases = pp.Group(pp.DelimitedList(switch_case, delim="|"))
+
+    # Switch: ?{ expr $$ cases }
+    switch_command = pp.Group(
+        cond_start
+        + OPT_WS
+        + switch_expr("expr")
+        + OPT_WS
+        + variant_delim
+        + OPT_WS
+        + switch_cases("cases")
+        + OPT_WS
+        + cond_end,
+    )
+
+    # Boolean unary: ?{ ${var} $$ then ($$ else)? } or ?{ !${var} $$ then }
+    bool_negation = pp.Opt(pp.Literal("!"))("bool_negation")
+    bool_if_command = pp.Group(
+        cond_start
+        + OPT_WS
+        + bool_negation
+        + OPT_WS
+        + variable_access_inner("left")
+        + OPT_WS
+        + variant_delim
+        + OPT_WS
+        + prompt()("if_value")
+        + pp.Opt(variant_delim + OPT_WS + prompt()("else_value"))
+        + OPT_WS
+        + cond_end,
+    )
+
+    # Try if forms first (they have operators), then bool (no operator, variable-only), then switch
+    conditional = (
+        if_command("if_command")
+        | unary_if_command("unary_if_command")
+        | bool_if_command("bool_if_command")
+        | switch_command("switch_command")
+    )
+    return conditional.leave_whitespace()
+
+
+def _extract_command(val) -> Command:
+    """Extract a single Command from a parse result value (may be a list or Command)."""
+    if isinstance(val, Command):
+        return val
+    if isinstance(val, (list, pp.ParseResults)):
+        items = [v for v in val if isinstance(v, Command)]
+        if len(items) == 1:
+            return items[0]
+        if len(items) > 1:
+            return SequenceCommand(tokens=items)
+    raise ValueError(f"Cannot extract Command from {val!r}")
+
+
+def _parse_conditional_command(
+    parse_result: pp.ParseResults,
+) -> IfCommand | SwitchCommand:
+    result_name = parse_result.get_name()
+    parts = parse_result[0]
+
+    if result_name in ("if_command", "unary_if_command", "bool_if_command"):
+        left = _extract_command(parts["left"])
+        right = _extract_command(parts["right"]) if "right" in parts else None
+        if_value = _extract_command(parts["if_value"])
+        else_value = (
+            _extract_command(parts["else_value"]) if "else_value" in parts else None
+        )
+        if result_name == "bool_if_command":
+            operator = (
+                "!bool"
+                if "bool_negation" in parts and parts["bool_negation"]
+                else "bool"
+            )
+        else:
+            operator = parts["operator"]
+        condition = Condition(
+            left=left,
+            operator=operator,
+            right=right,
+        )
+        return IfCommand(
+            condition=condition,
+            if_value=if_value,
+            else_value=else_value,
+        )
+
+    # switch_command
+    expr = _extract_command(parts["expr"])
+    cases = []
+    for case_data in parts["cases"]:
+        label_raw = str(case_data["label"]).strip()
+        fall_through = "fall_through" in case_data
+        cases.append(
+            SwitchCase(
+                label=label_raw,
+                value=_extract_command(case_data["case_value"]),
+                fall_through=fall_through,
+            ),
+        )
+    return SwitchCommand(
+        expr=expr,
+        cases=cases,
+    )
+
+
 def create_parser(
     *,
     parser_config: ParserConfig,
 ) -> pp.ParserElement:
-    bound_expr = _configure_range()
+    bound_expr = _configure_range(parser_config=parser_config)
 
     prompt = pp.Forward()
     variant_prompt = pp.Forward()
@@ -478,17 +761,33 @@ def create_parser(
         variant_prompt,
         parser_config=parser_config,
     )
+    conditional = _configure_conditional(
+        parser_config=parser_config,
+        prompt=variant_prompt,
+    )
 
     chunk = (
         variable_assignment
         | variable_access
+        | conditional
         | wrap_command
         | variants
         | wildcard
         | literal_sequence
     )
+    variant_variant_assignment = _configure_variable_assignment(
+        parser_config=parser_config,
+        prompt=variant_prompt,
+    )
+    variant_variant_assignment.set_parse_action(_parse_variable_assignment_command)
     variant_chunk = (
-        variable_access | wrap_command | variants | wildcard | variant_literal_sequence
+        variant_variant_assignment
+        | variable_access
+        | conditional
+        | wrap_command
+        | variants
+        | wildcard
+        | variant_literal_sequence
     )
     wildcard_chunk = (
         wildcard_variable_access
@@ -519,14 +818,15 @@ def create_parser(
     prompt.set_parse_action(_parse_sequence_or_single_command)
     variant_prompt.set_parse_action(_parse_sequence_or_single_command)
     wrap_command.set_parse_action(_parse_wrap_command)
+    conditional.set_parse_action(_parse_conditional_command)
     wildcard_prompt.set_parse_action(_parse_sequence_or_single_command)
     return prompt
 
 
-# Cache of parsers, keyed by parser config. Since parser configs are immutable,
-# we can use them as keys; we still use a weak key dictionary to avoid leaking
-# memory if a custom parser config is garbage collected.
-_parser_cache: WeakKeyDictionary[ParserConfig, pp.ParserElement] = WeakKeyDictionary()
+# Cache of parsers, keyed by parser config value. ParserConfig is a frozen
+# dataclass, so __hash__/__eq__ are based on field values — two configs with
+# the same settings share the same cached parser.
+_parser_cache: dict[ParserConfig, pp.ParserElement] = {}
 
 
 def get_cached_parser(parser_config: ParserConfig):
@@ -542,15 +842,11 @@ def get_cached_parser(parser_config: ParserConfig):
         return parser
 
 
-def parse(
+@lru_cache(maxsize=512)
+def _parse_cached(
     prompt: str,
-    parser_config: ParserConfig = default_parser_config,
+    parser_config: ParserConfig,
 ) -> Command:
-    """
-    Parse a prompt string into a commands.
-    :param prompt: The prompt string to parse.
-    :return: A command representing the parsed prompt.
-    """
     if prompt.isalnum():  # no need to actually parse anything
         return LiteralCommand(prompt)
 
@@ -564,3 +860,15 @@ def parse(
     tok = tokens[0]
     assert isinstance(tok, Command)
     return tok
+
+
+def parse(
+    prompt: str,
+    parser_config: ParserConfig = default_parser_config,
+) -> Command:
+    """
+    Parse a prompt string into a command.
+    :param prompt: The prompt string to parse.
+    :return: A command representing the parsed prompt.
+    """
+    return _parse_cached(prompt, parser_config)

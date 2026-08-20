@@ -47,10 +47,8 @@ class RandomSampler(Sampler):
         context: SamplingContext,
     ) -> int:
         # Wraps randint for ease of testing
-        return context.rand.randint(
-            command.min_bound,
-            command.max_bound,
-        )
+        min_b, max_b = command.resolve_bounds(context)
+        return context.rand.randint(min_b, max_b)
 
     def _get_wildcard_choice_generator(
         self,
@@ -69,11 +67,12 @@ class RandomSampler(Sampler):
             return
         elif len(command.values) == 1:
             if isinstance(command.values[0], WildcardCommand):
+                min_b, max_b = command.resolve_bounds(context)
                 wildcard_variant = wildcard_to_variant(
                     command.values[0],
                     context=context,
-                    min_bound=command.min_bound,
-                    max_bound=command.max_bound,
+                    min_bound=min_b,
+                    max_bound=max_b,
                     separator=command.separator,
                 )
 
@@ -84,7 +83,7 @@ class RandomSampler(Sampler):
                 )
             return
         while True:
-            command = command.adjust_range()
+            command = command.adjust_range(context)
 
             num_choices = min(
                 command.max_bound,
@@ -107,6 +106,8 @@ class RandomSampler(Sampler):
                 yield rotate_and_join(
                     sub_generators,
                     separator=command.separator,
+                    prefix=command.prefix,
+                    suffix=command.suffix,
                 )
 
     def _get_wildcard(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import warnings
+from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
 
@@ -37,7 +38,7 @@ class WildcardManager:
         self._path: Path | None = Path(path) if path else None
         self._wildcard_wrap = wildcard_wrap
         self._tree: WildcardTree | None = None
-        self._values_cache: dict[str, WildcardValues] = {}
+        self._values_cache: OrderedDict[str, WildcardValues] = OrderedDict()
         self._sort_wildcards = True
         self._dedup_wildcards = True
         self.shuffle_wildcards = False
@@ -193,18 +194,17 @@ class WildcardManager:
 
         wildcards = list(values)
 
-        if self.dedup_wildcards:
-            wildcards = list(dict.fromkeys(wildcards, None))
-
-        if self.sort_wildcards and not self.shuffle_wildcards:
+        if self.dedup_wildcards and self.sort_wildcards and not self.shuffle_wildcards:
+            wildcards = sorted(set(wildcards), key=str)
+        elif self.dedup_wildcards:
+            wildcards = list(dict.fromkeys(wildcards))
+        elif self.sort_wildcards and not self.shuffle_wildcards:
             wildcards = sorted(wildcards, key=str)
 
         values_object = WildcardValues.from_items(wildcards)
 
-        if len(self._values_cache) > 100:
-            # Naive way to limit the size of the cache.
-            # We can't use `popitem` because it's guaranteed to be LIFO and we'd want FIFO.
-            self._values_cache.clear()
+        if len(self._values_cache) >= 100:
+            self._values_cache.popitem(last=False)
 
         self._values_cache[wildcard] = values_object
 

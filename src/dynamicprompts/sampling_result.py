@@ -13,20 +13,35 @@ class SamplingResult:
     """
 
     text: str
+    # Variables assigned during sampling of this result (e.g. from inside a variant branch).
+    # Excluded from hash/eq so that SamplingResult remains hashable even when variables
+    # contain Commands with unhashable fields (e.g. lists inside VariantCommand).
+    variables: tuple[tuple[str, object], ...] = dataclasses.field(
+        default=(),
+        compare=False,
+        hash=False,
+    )
 
     def __str__(self):
         return self.text
 
     @property
-    def dedupe_key(self) -> tuple[str]:
+    def dedupe_key(self) -> tuple:
         # Used by e.g. combinatorial sampling's fragment deduplication.
-        # Please make sure to update this if you add more fields to SamplingResult.
-        return (self.text,)
+        # Include variable names+repr so that branches that produce the same
+        # text but assign different variables are not collapsed into one result.
+        var_key = tuple((name, repr(val)) for name, val in self.variables)
+        return (self.text, var_key)
 
     def whitespace_squashed(self) -> SamplingResult:
         from dynamicprompts.utils import squash_whitespace
 
         return dataclasses.replace(self, text=squash_whitespace(self.text))
+
+    def commas_squashed(self) -> SamplingResult:
+        from dynamicprompts.utils import squash_commas
+
+        return dataclasses.replace(self, text=squash_commas(self.text))
 
     def text_replaced(self, new_text: str) -> SamplingResult:
         return dataclasses.replace(self, text=new_text)
@@ -69,4 +84,25 @@ class SamplingResult:
         if separator:
             joined = removeprefix(joined, separator)
             joined = removesuffix(joined, separator)
-        return cls(text=joined)
+
+        # Merge variables from all constituent results (last assignment wins).
+        merged_vars: dict[str, object] = {}
+        for r in results_list:
+            for name, val in r.variables:
+                merged_vars[name] = val
+        return cls(text=joined, variables=tuple(merged_vars.items()))
+
+    @classmethod
+    def joined_with_affixes(
+        cls,
+        results: Iterable[SamplingResult],
+        *,
+        separator: str,
+        prefix: str = "",
+        suffix: str = "",
+    ) -> SamplingResult:
+        """Join results with separator, then wrap with prefix/suffix if non-empty."""
+        result = cls.joined(results, separator=separator)
+        if result.text and (prefix or suffix):
+            return result.text_replaced(prefix + result.text + suffix)
+        return result

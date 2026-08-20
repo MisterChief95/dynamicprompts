@@ -1,12 +1,10 @@
 # Dynamic Prompts
 
+> **Note: This is a fork of [adieyal/dynamicprompts](https://github.com/adieyal/dynamicprompts)** developed to add new features (conditional logic, prefix/suffix on variant output, comma squashing, and variable assignments in branches). See [Recent Changes](#recent-changes) below.
+
 ![MIT](https://img.shields.io/github/license/adieyal/dynamicprompts)
-&nbsp;-&nbsp;
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/adieyal/dynamicprompts/test.yml)
-[![Codecov](https://img.shields.io/codecov/c/github/adieyal/dynamicprompts)](https://app.codecov.io/gh/adieyal/dynamicprompts)
-&nbsp;-&nbsp;
-[![PyPI](https://img.shields.io/pypi/v/dynamicprompts)](https://pypi.org/project/dynamicprompts) ![PyPI - Downloads](https://img.shields.io/pypi/dm/dynamicprompts)
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/dynamicprompts)
+&nbsp;
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/MisterChief95/dynamicprompts/build_release_wheels.yml)
 
 Dynamic prompts is a Python library that provides developers with a **flexible and intuitive templating language** and **tools** for generating prompts for text-to-image generators like Stable Diffusion, MidJourney or Dall-e 2. It lets you create and manage **sophisticated prompt generation workflows** that seamlessly integrate with your existing text-to-image generation pipelines.
 
@@ -19,6 +17,9 @@ It includes:
 - A mechanism for creating a wildcard library. Text, JSON, and YAML files are supported.
 - Exhaustive generation of all prompts from a template.
 - Variable assignment enabling re-usable prompt snippets.
+- **Conditional if/else and switch/case logic** based on variable values.
+- **Prefix and suffix** wrapping for variant output (e.g. Stable Diffusion prompt scheduling syntax).
+- **Automatic comma squashing** — adjacent commas from empty variant output are merged automatically.
 - Supports Magic Prompt which automatically spices up your prompt with modifiers
 - Provides an I'm Feeling Lucky feature which uses the semantic search on Lexica.art to find similar prompts.
 - For systems that support attention syntax, Attention Grabber will emphasis random phrases in your prompt.
@@ -51,6 +52,11 @@ The dynamic prompts library powers the [Dynamic Prompts](https://github.com/adie
 - [Jinja2 templates](#jinja2-templates)
 - [Template syntax](#template-syntax)
   - [Syntax customisation](#syntax-customisation)
+- [Recent Changes](#recent-changes)
+- [New features](#new-features)
+  - [Conditional if/else and switch/case](#conditional-ifelse-and-switchcase)
+  - [Prefix and suffix on variant output](#prefix-and-suffix-on-variant-output)
+  - [Comma squashing](#comma-squashing)
 - [Wildcard Collections](#wildcard-collections)
 - [Dynamic Prompts in the wild.](#dynamic-prompts-in-the-wild)
 
@@ -456,6 +462,73 @@ from dynamicprompts.parser.config import ParserConfig
 parser_config = ParserConfig(variant_start="<", variant_end=">", wildcard_wrap="**")
 generator = RandomPromptGenerator(parser_config=parser_config)
 
+```
+
+## Recent Changes
+
+This fork extends the upstream library with the following additions (v0.32.0–v0.33.1):
+
+**v0.33.1**
+
+- Fix: Variable assignments inside switch cases now correctly bubble up to the outer sequence.
+- Fix: Variable lookup is deferred until generator iteration, preventing `KeyError` for variables not yet assigned.
+- Fix: Switch case parser now tolerates leading/trailing commas and whitespace at case boundaries.
+
+**v0.33.0**
+
+- Variable assignments are now allowed inside variant branches, if/else branches, and switch cases. Variables assigned in the chosen branch are visible to subsequent tokens in the same sequence (e.g. `{cat ${col=orange}|dog ${col=brown}}, ${col} fur`).
+- Combinatorial sampler correctly distinguishes branches that produce identical text but assign different variables.
+
+**v0.32.0**
+
+- Repeated commas produced by empty sampling results are automatically squashed.
+- Prefix and suffix parameters (`p=`, `s=`) on variant output allow wrapping selected values (e.g. for Stable Diffusion prompt scheduling syntax).
+- Conditional if/else and switch/case logic for variable-driven prompt branching.
+
+## New features
+
+### Conditional if/else and switch/case
+
+Conditionals allow prompt content to change based on variable values. The syntax uses `?{...}` (or `@if{...}`):
+
+```
+${style=!{cinematic|anime|oil painting}}
+portrait, ?{${style} == cinematic $$ dramatic lighting, lens flare $$ soft studio lighting}
+```
+
+Switch/case matches a variable against a list of labels:
+
+```
+?{${style} $$ cinematic: lens flare | anime: cel shading | _: natural light}
+```
+
+See the [full syntax guide](docs/SYNTAX.md#conditionals) for the complete list of operators (`==`, `!=`, `>`, `<`, `>=`, `<=`, `empty`, `!empty`) and fall-through switch cases.
+
+### Prefix and suffix on variant output
+
+Add `p=` (prefix) and `s=` (suffix) parameters to a variant to wrap its output. Useful for Stable Diffusion prompt scheduling syntax:
+
+```
+{1$$p=[$$s=]$$a dog|a cat}            → [a dog]  or  [a cat]
+{2$$:$$p=[$$s=:0.5]$$oil painting|watercolor}  → [oil painting:watercolor:0.5]
+```
+
+If the variant produces no output (e.g. bound of 0), the prefix and suffix are omitted entirely.
+
+See the [full syntax guide](docs/SYNTAX.md#prefix-and-suffix) for details.
+
+### Comma squashing
+
+When variants produce no output, adjacent commas in the surrounding prompt are automatically merged:
+
+```
+thing, {0$$a|b}, other_thing   →  thing, other_thing   (not  thing, , other_thing)
+```
+
+This is on by default. To disable:
+
+```python
+generator = RandomPromptGenerator(squash_commas=False)
 ```
 
 ## Wildcard Collections

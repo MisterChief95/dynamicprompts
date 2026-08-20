@@ -39,6 +39,7 @@ class SamplingContext:
         default_factory=_build_default_samplers,
     )
     ignore_whitespace: bool = False
+    squash_commas: bool = True
     parser_config: ParserConfig = default_parser_config
     rand: Random = DEFAULT_RANDOM
     variables: dict[str, Command] = dataclasses.field(default_factory=dict)
@@ -124,6 +125,9 @@ class SamplingContext:
 
         gen = self.generator_from_command(command)
 
+        if self.squash_commas:
+            gen = (res.commas_squashed() for res in gen)
+
         if self.ignore_whitespace:
             gen = (res.whitespace_squashed() for res in gen)
 
@@ -167,11 +171,17 @@ class SamplingContext:
         if command.immediate:
             if isinstance(command.value, LiteralCommand):
                 # Optimization: if the variable assignment is a literal, just use that
-                return command.value
-            # Sample the variable assignment command to get the value
-            return LiteralCommand(
-                str(
-                    next(self.generator_from_command(command.value)),
-                ),  # TODO: sus str cast from result?
-            )
-        return command.value
+                resolved: Command = command.value
+            else:
+                # Sample the variable assignment command to get the value
+                resolved = LiteralCommand(
+                    str(
+                        next(self.generator_from_command(command.value)),
+                    ),  # TODO: sus str cast from result?
+                )
+        else:
+            resolved = command.value
+        if command.is_boolean and isinstance(resolved, LiteralCommand):
+            normalized = "true" if resolved.literal.lower() == "true" else "false"
+            resolved = LiteralCommand(normalized)
+        return resolved

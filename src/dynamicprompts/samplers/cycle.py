@@ -66,16 +66,17 @@ class CyclicalSampler(Sampler):
             return
         elif is_wildcard_variant:
             wildcard_command = cast(WildcardCommand, command.values[0])
+            min_b, max_b = command.resolve_bounds(sampling_context)
             wildcard_variant = wildcard_to_variant(
                 wildcard_command,
                 context=sampling_context,
-                min_bound=command.min_bound,
-                max_bound=command.max_bound,
+                min_bound=min_b,
+                max_bound=max_b,
                 separator=command.separator,
             )
             yield from self._get_variant(wildcard_variant, sampling_context)
         else:
-            command = command.adjust_range()
+            command = command.adjust_range(sampling_context)
 
             combinations = (
                 combo
@@ -85,7 +86,12 @@ class CyclicalSampler(Sampler):
 
             combination_samplers = (
                 (
-                    SamplingResult.joined(sample, separator=command.separator)
+                    SamplingResult.joined_with_affixes(
+                        sample,
+                        separator=command.separator,
+                        prefix=command.prefix,
+                        suffix=command.suffix,
+                    )
                     for sample in _get_combination_samples(combo, sampling_context)
                 )
                 for combo in combinations

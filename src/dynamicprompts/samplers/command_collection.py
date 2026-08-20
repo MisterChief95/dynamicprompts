@@ -15,13 +15,16 @@ class CommandCollection:
 
     def __init__(self, commands: Iterable[Command], context: SamplingContext) -> None:
         self._commands = list(commands)
+        self._command_index: dict[int, int] = {
+            id(c): i for i, c in enumerate(self._commands)
+        }
         self._generators = [context.generator_from_command(c) for c in self._commands]
         self._values: list[SamplingResult | None] = [next(g) for g in self._generators]
 
     def get_value(self, command: Command) -> SamplingResult | None:
         try:
-            index = self._commands.index(command)
-        except ValueError:
+            index = self._command_index[id(command)]
+        except KeyError:
             raise ValueError(f"Command {command} not in collection") from None
 
         generator = self._generators[index]

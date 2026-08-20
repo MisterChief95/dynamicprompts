@@ -4,3 +4,7 @@
 dist
 /.coverage
 *.code-workspace
+
+# pytest-benchmark output
+bench_*.json
+.benchmarks/
