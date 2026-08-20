@@ -42,12 +42,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "v${{ steps.version.outputs.version }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::v${{ steps.version.outputs.version }} is already released. Bump __version__ in src/dynamicprompts/__init__.py to publish a new one."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          tag="v${{ steps.version.outputs.version }}"
+          draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null || echo "missing")
+          case "$draft" in
+            false)
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::$tag is already published. Bump __version__ in src/dynamicprompts/__init__.py to publish a new one."
+              ;;
+            true)
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::$tag exists as a draft; it will be updated and published."
+              ;;
+            *)
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
       - name: Create Release
         if: steps.check.outputs.exists == 'false'
